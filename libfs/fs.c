@@ -7,7 +7,16 @@
 #include "disk.h"
 #include "fs.h"
 
-/* TODO: Phase 1 */
+typedef struct __attribute__((__packed__))	//little-endian + unsigned specs
+{
+	char signature[8]; //ECS150FS
+	uint16_t num_blks_vd;
+	uint16_t root_dir_blk_index;
+	uint16_t data_blk_start_index;
+	uint16_t num_data_blks;
+	uint8_t num_blks_fat;
+	uint8_t padding[4079];
+} superblock;
 
 int fs_mount(const char *diskname)
 {
