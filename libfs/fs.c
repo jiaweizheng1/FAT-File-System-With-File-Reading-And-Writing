@@ -25,7 +25,7 @@ struct FAT
 	uint16_t *array;
 } __attribute__((__packed__));
 
-struct file
+struct Entry
 {
 	uint8_t filename[FS_FILENAME_LEN];
 	uint32_t size_file_bytes;
@@ -35,7 +35,7 @@ struct file
 
 struct Rootdir 
 {
-	struct file array[FS_FILE_MAX_COUNT];
+	struct Entry array[FS_FILE_MAX_COUNT];
 } __attribute__((__packed__));
 
 struct File
