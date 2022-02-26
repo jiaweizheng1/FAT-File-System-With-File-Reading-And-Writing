@@ -151,7 +151,7 @@ int fs_info(void)
 	int num_rootdir_free_entries = 0;
 	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
 	{
-		if(rootdir.array[i].filename[0] == NULL) num_rootdir_free_entries++;
+		if(rootdir.array[i].filename[0] == '\0') num_rootdir_free_entries++;
 	}
 
 	printf("fat_free_ratio: %d", num_fat_free_entries/(2048 
