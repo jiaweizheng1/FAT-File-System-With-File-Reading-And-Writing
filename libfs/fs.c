@@ -84,14 +84,13 @@ int fs_mount(const char *diskname)
 	//map or mount FAT; 4096 bytes * num fat blocks
 	fat.array = (uint16_t*)malloc(sizeof(uint16_t) * 2048 
 		* superblock.num_blks_fat);
-	void *buf = (void*)malloc(sizeof(BLOCK_SIZE));
+	void *buf = (void*)malloc(BLOCK_SIZE);
 	//copy block by block
 	for(size_t i = 1, j = 0; i < superblock.root_dir_blk_index; i++, j++)
 	{
 		if(block_read(i, buf) == -1) return -1;
 		memcpy(fat.array + j * BLOCK_SIZE, buf, BLOCK_SIZE);
 	}
-	free(buf);	//no longer needed
 
 	//validate Fat array
 	if(fat.array[0] != FAT_EOC) return -1;
@@ -114,18 +113,14 @@ int fs_umount(void)
 	//save disk and close
 	if(block_write(0, &superblock) == -1) return -1;
 
-	void *buf = (void*)malloc(sizeof(BLOCK_SIZE));
 	for(size_t i = 1, j = 0; i < superblock.root_dir_blk_index; i++, j++)
 	{
 		if(block_write(i, fat.array + j * BLOCK_SIZE) == -1) return -1;
 	}
-	free(buf); //no longer needed
 
 	if(block_write(superblock.root_dir_blk_index, &rootdir) == -1) return -1;
 
 	if(block_disk_close() == -1) return -1;
-
-	free(fat.array);	//reset fat.array for new mounted disk
 
 	fsmounted = 0;
 
@@ -136,15 +131,15 @@ int fs_info(void)
 {
 	if(!fsmounted) return -1;
 
-	printf("__FS's Superblock info__\n");
-	printf("Num blks fat: %i\n", superblock.num_blks_fat);
-	printf("Root dir index: %i\n", superblock.root_dir_blk_index);
-	printf("Data blk start index: %i\n", superblock.data_blk_start_index);
-	printf("Num blks data: %i\n", superblock.num_data_blks);
-	printf("Total blocks: %i\n", superblock.num_blks_vd);
+	printf("FS Info:\n");
+	printf("total_blk_count=%i\n", superblock.num_blks_vd);
+	printf("fat_blk_count=%i\n", superblock.num_blks_fat);
+	printf("rdir_blk=%i\n", superblock.root_dir_blk_index);
+	printf("data_blk=%i\n", superblock.data_blk_start_index);
+	printf("data_blk_count=%i\n", superblock.num_data_blks);
 
 	int num_fat_free_entries = 0;
-	for(int i = 0; i < 2048 * superblock.num_blks_fat; i++)
+	for(int i = 0; i < superblock.num_data_blks; i++)
 	{
 		if(fat.array[i] == 0) num_fat_free_entries++;
 	}
@@ -155,57 +150,72 @@ int fs_info(void)
 		if(rootdir.array[i].filename[0] == '\0') num_rootdir_free_entries++;
 	}
 
-	printf("fat_free_ratio: %d", num_fat_free_entries/(2048 
-		* superblock.num_blks_fat));
-	printf("rootdir_free_ratio: %d", num_rootdir_free_entries
-		/FS_FILE_MAX_COUNT);
-	printf("data_free_ratio: %d", 1 - (superblock.num_data_blks 
-		- num_fat_free_entries)/(superblock.num_data_blks));
+	printf("fat_free_ratio=%d/%d\n", num_fat_free_entries, 
+		superblock.num_data_blks);
+	printf("rdir_free_ratio=%d/%d\n", num_rootdir_free_entries,
+		FS_FILE_MAX_COUNT);
 	
 	return 0;
 }
 
 int fs_create(const char *filename)
 {
-	/* TODO: Phase 2 */
+	if(!fsmounted || filename == NULL || strlen(filename) > FS_FILENAME_LEN) 
+		return -1;
+	return 0;
 }
 
 int fs_delete(const char *filename)
 {
+	if(filename) return -1;
+	return 0;
 	/* TODO: Phase 2 */
 }
 
 int fs_ls(void)
 {
+	return 0;
 	/* TODO: Phase 2 */
 }
 
 int fs_open(const char *filename)
 {
+	if(filename) return -1;
+	return 0;
 	/* TODO: Phase 3 */
 }
 
 int fs_close(int fd)
 {
+	if(fd) return -1;
+	return 0;
 	/* TODO: Phase 3 */
 }
 
 int fs_stat(int fd)
 {
+	if(fd) return -1;
+	return 0;
 	/* TODO: Phase 3 */
 }
 
 int fs_lseek(int fd, size_t offset)
 {
+	if(fd || offset) return -1;
+	return 0;
 	/* TODO: Phase 3 */
 }
 
 int fs_write(int fd, void *buf, size_t count)
 {
+	if(fd || buf || count) return -1;
+	return 0;
 	/* TODO: Phase 4 */
 }
 
 int fs_read(int fd, void *buf, size_t count)
 {
+	if(fd || buf || count) return -1;
+	return 0;
 	/* TODO: Phase 4 */
 }

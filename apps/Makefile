@@ -26,7 +26,6 @@ CC	= gcc
 
 # General gcc options
 CFLAGS	:= -Wall -Werror
-CFLAGS	+= -pipe
 ## Debug flag
 ifneq ($(D),1)
 CFLAGS	+= -O2
