@@ -61,7 +61,9 @@ int fs_mount(const char *diskname)
 	
 	//check valid FAT
 	//https://www.geeksforgeeks.org/find-ceil-ab-without-using-ceil-function/
-	if(superblock.num_blks_fat != (superblock.num_data_blks + (BLOCK_SIZE/2)
+	//ceil((num_data_blks*2)/BLOCK_SIZE)
+	//ceilVal = (a+b-1) / b, a=num_data_blks*2, b=BLOCK_SIZE
+	if(superblock.num_blks_fat != (superblock.num_data_blks*2 + (BLOCK_SIZE/2)
 		- 1)/(BLOCK_SIZE/2)) return -1;
 	if(superblock.num_blks_fat + 1 != superblock.root_dir_blk_index) 
 		return -1; //root index
