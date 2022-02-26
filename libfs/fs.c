@@ -40,6 +40,7 @@ struct Rootdir
 
 struct File
 {
+	uint8_t filename[FS_FILENAME_LEN];
 	size_t offset;
 };
 
@@ -158,6 +159,8 @@ int fs_info(void)
 		* superblock.num_blks_fat));
 	printf("rootdir_free_ratio: %d", num_rootdir_free_entries
 		/FS_FILE_MAX_COUNT);
+	printf("data_free_ratio: %d", 1 - (superblock.num_data_blks 
+		- num_fat_free_entries)/(superblock.num_data_blks));
 	
 	return 0;
 }
