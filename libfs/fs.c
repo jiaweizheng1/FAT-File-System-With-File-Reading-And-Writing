@@ -9,8 +9,11 @@
 
 #define FAT_EOC 0xFFFF
 
-struct Superblock	//unsigned specs
+struct Superblock //unsigned specs
 {
+	//1 byte = 8 bits
+	//signedness and bit size
+	//https://www.gnu.org/software/libc/manual/html_node/Integers.html
 	uint8_t signature[8]; //ECS150FS
 	uint16_t num_blks_vd;
 	uint16_t root_dir_blk_index;
@@ -18,7 +21,7 @@ struct Superblock	//unsigned specs
 	uint16_t num_data_blks;
 	uint8_t num_blks_fat;
 	uint8_t padding[4079];
-} __attribute__((__packed__));
+} __attribute__((__packed__)); //avoid the compiler to interfere with their layout
 
 struct FAT
 {
@@ -35,7 +38,7 @@ struct Entry
 
 struct Rootdir 
 {
-	struct Entry entry[FS_FILE_MAX_COUNT];
+	struct Entry entries[FS_FILE_MAX_COUNT];
 } __attribute__((__packed__));
 
 static struct Superblock superblock;
@@ -44,29 +47,32 @@ static struct Rootdir rootdir;
 
 int fs_mount(const char *diskname)
 {
+	//check valid disk 
 	if(block_disk_open(diskname) == -1) return -1;
 
 	//map or mount superblock
 	if(block_read(0, &superblock) == -1) return -1;
 
-	//check valid disk 
 	//check valid superblock
 	if(memcmp(superblock.signature, "ECS150FS", 8) != 0) return -1; //signature
 	if(1 + superblock.num_blks_fat + 1 + superblock.num_data_blks
-		!= superblock.num_blks_vd) return -1;	//block amount
-	if(superblock.num_blks_vd != block_disk_count()) return -1;	//block amount
+		!= superblock.num_blks_vd) return -1; //block amount
+	if(superblock.num_blks_vd != block_disk_count()) return -1; //block amount
+	
 	//check valid FAT
 	//https://www.geeksforgeeks.org/find-ceil-ab-without-using-ceil-function/
 	if(superblock.num_blks_fat != (superblock.num_data_blks + (BLOCK_SIZE/2)
 		- 1)/(BLOCK_SIZE/2)) return -1;
 	if(superblock.num_blks_fat + 1 != superblock.root_dir_blk_index) 
-		return -1;	//root index
+		return -1; //root index
 	if(superblock.root_dir_blk_index + 1 != superblock.data_blk_start_index)
 		return -1; //first data index
+	
+	fat.array = (uint16_t*)malloc(num_blks_fat*BLOCK_SIZE); //num_blks_fat is not known at compile time, so it cannot be static
 
 	//check valid root dir
 
-
+	//mounted superblock
 	return 0;
 }
 
