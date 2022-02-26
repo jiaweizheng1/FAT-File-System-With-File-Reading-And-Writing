@@ -91,6 +91,7 @@ int fs_info(void)
 int fs_create(const char *filename)
 {
 	/* TODO: Phase 2 */
+	data_blk_start_index = FAT_EOC;
 }
 
 int fs_delete(const char *filename)
