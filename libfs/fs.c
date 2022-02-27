@@ -38,7 +38,7 @@ struct Rootdir
 	struct Entry array[FS_FILE_MAX_COUNT];
 } __attribute__((__packed__));
 
-struct File	//packed not needed because this info is not written to disk
+struct FD	//packed not needed because this info is not written to disk
 {
 	uint8_t filename[FS_FILENAME_LEN];
 	size_t offset;
@@ -46,7 +46,7 @@ struct File	//packed not needed because this info is not written to disk
 
 struct FDTable
 {
-	struct File file[FS_OPEN_MAX_COUNT];
+	struct FD fd[FS_OPEN_MAX_COUNT];
 	int fd_open; //max is FS_OPEN_MAX_COUNT or 32
 };
 
@@ -129,7 +129,7 @@ int fs_umount(void)
 
 	if(block_disk_close() == -1) return -1;
 
-	free(fat.array);	//free and reset fat array for reused
+	free(fat.array);	//free and reset fat array for reuse
 
 	fsmounted = 0;
 
@@ -174,20 +174,23 @@ int fs_create(const char *filename)
 	if(!fsmounted || filename == NULL || strlen(filename) + 1
 		> FS_FILENAME_LEN) return -1;
 
-	int i = 0, first_available_index = -1;	//-1 for invalid
+	int num_files = 0, first_available_index = -1;	//-1 for invalid
 
-	for(; i < FS_FILE_MAX_COUNT; i++)
+	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
 	{	///need to check every entry before we decide
 		//filename already exists
 		if(strcmp((char*)rootdir.array[i].filename, filename) == 0) return -1;
-		if(rootdir.array[i].filename[0] == '\0' && first_available_index == -1)
+		if(rootdir.array[i].filename[0] != '\0')
 		{
-			//update first available index for adding file to root dir
+			num_files++;
+		}
+		else if(first_available_index == -1)
+		{
 			first_available_index = i;
 		}
 	}
 	//root directory already has 128 files
-	if(i == FS_FILE_MAX_COUNT - 1) return -1;
+	if(num_files == FS_FILE_MAX_COUNT) return -1;
 
 	//else, safe to create this new file in root dir
 	memcpy(rootdir.array[first_available_index].filename, filename
