@@ -38,7 +38,7 @@ struct Rootdir
 	struct Entry array[FS_FILE_MAX_COUNT];
 } __attribute__((__packed__));
 
-struct File
+struct File	//packed not needed because this info is not written to disk
 {
 	uint8_t filename[FS_FILENAME_LEN];
 	size_t offset;
@@ -47,7 +47,7 @@ struct File
 struct FDTable
 {
 	struct File file[FS_OPEN_MAX_COUNT];
-	int fd_open; //max is FS_OPEN_MAX_COUNT 32
+	int fd_open; //max is FS_OPEN_MAX_COUNT or 32
 };
 
 static struct Superblock superblock;
@@ -58,6 +58,8 @@ static int fsmounted;	//boolean; either one fs is mounted or none
 
 int fs_mount(const char *diskname)
 {
+	if(diskname == NULL) return -1;
+
 	if(block_disk_open(diskname) == -1) return -1;
 
 	//map or mount superblock
@@ -65,7 +67,8 @@ int fs_mount(const char *diskname)
 
 	//validate disk 
 	//validate superblock
-	if(memcmp(superblock.signature, "ECS150FS", 8) != 0) return -1; //signature
+	if(memcmp(superblock.signature, "ECS150FS", sizeof(superblock.signature)) 
+		!= 0) return -1; //signature
 	if(1 + superblock.num_blks_fat + 1 + superblock.num_data_blks
 		!= superblock.num_blks_vd) return -1;	//block amount
 	if(superblock.num_blks_vd != block_disk_count()) return -1;	//block amount
@@ -81,7 +84,7 @@ int fs_mount(const char *diskname)
 	if(superblock.root_dir_blk_index + 1 != superblock.data_blk_start_index)
 		return -1; //first data index
 
-	//map or mount FAT; 4096 bytes * num fat blocks
+	//map or mount FAT; 4096 bytes * num FAT blocks
 	fat.array = (uint16_t*)malloc(sizeof(uint16_t) * 2048 
 		* superblock.num_blks_fat);
 	void *buf = (void*)malloc(BLOCK_SIZE);
@@ -95,7 +98,7 @@ int fs_mount(const char *diskname)
 	//validate Fat array
 	if(fat.array[0] != FAT_EOC) return -1;
 
-	//map or mount Root dir
+	//map or mount root dir
 	if(block_read(superblock.root_dir_blk_index, &rootdir) == -1) return -1;
 
 	fdtable.fd_open = 0;
@@ -107,17 +110,20 @@ int fs_mount(const char *diskname)
 
 int fs_umount(void)
 {
-	//error check open fds
+	//error check
 	if(!fsmounted || fdtable.fd_open > 0) return -1;
 
 	//save disk and close
+	//write back superblock
 	if(block_write(0, &superblock) == -1) return -1;
 
+	//write back FAT
 	for(size_t i = 1, j = 0; i < superblock.root_dir_blk_index; i++, j++)
 	{
 		if(block_write(i, fat.array + j * BLOCK_SIZE) == -1) return -1;
 	}
 
+	//write root dir
 	if(block_write(superblock.root_dir_blk_index, &rootdir) == -1) return -1;
 
 	if(block_disk_close() == -1) return -1;
@@ -141,12 +147,14 @@ int fs_info(void)
 	int num_fat_free_entries = 0;
 	for(int i = 0; i < superblock.num_data_blks; i++)
 	{
+		//free entry in FAT if value is 0
 		if(fat.array[i] == 0) num_fat_free_entries++;
 	}
 
 	int num_rootdir_free_entries = 0;
 	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
 	{
+		//free entry in root dir if first char of filename is null
 		if(rootdir.array[i].filename[0] == '\0') num_rootdir_free_entries++;
 	}
 
@@ -160,22 +168,88 @@ int fs_info(void)
 
 int fs_create(const char *filename)
 {
-	if(!fsmounted || filename == NULL || strlen(filename) > FS_FILENAME_LEN) 
-		return -1;
+	if(!fsmounted || filename == NULL || strlen(filename) + 1
+		> FS_FILENAME_LEN) return -1;
+
+	int i = 0, first_available_index = -1;	//-1 for invalid
+
+	for(; i < FS_FILE_MAX_COUNT; i++)
+	{	///need to check every entry before we decide
+		//filename already exists
+		if(strcmp((char*)rootdir.array[i].filename, filename) == 0) return -1;
+		if(rootdir.array[i].filename[0] == '\0' && first_available_index == -1)
+		{
+			//update first available index for adding file to root dir
+			first_available_index = i;
+		}
+	}
+	//root directory already has 128 files
+	if(i == FS_FILE_MAX_COUNT - 1) return -1;
+
+	//else, safe to create this new file in root dir
+	memcpy(rootdir.array[first_available_index].filename, filename
+		, FS_FILENAME_LEN);
+	rootdir.array[first_available_index].size_file_bytes = 0;
+	rootdir.array[first_available_index].index_first_data_blk = FAT_EOC;
+	
 	return 0;
 }
 
-int fs_delete(const char *filename)
+int fs_delete(const char *filename)	//IDK how check file is currently open???
 {
-	if(filename) return -1;
+	if(!fsmounted || filename == NULL || strlen(filename) + 1
+		> FS_FILENAME_LEN) return -1;
+
+	int i = 0;
+
+	for(; i < FS_FILE_MAX_COUNT; i++)
+	{
+		if(strcmp((char*)rootdir.array[i].filename, filename) == 0)
+		{
+			//found
+			break;
+		}
+	}
+	//file not found
+	if(i == FS_FILE_MAX_COUNT - 1) return -1;
+
+	//otherwise, clean file's contents in root dir and FAT
+	uint16_t index_cur_data_blk;
+	index_cur_data_blk = rootdir.array[i].index_first_data_blk;
+
+	//delete file's contents in root dir
+	rootdir.array[i].filename[0] = '\0';
+	rootdir.array[i].size_file_bytes = 0;
+	rootdir.array[i].index_first_data_blk = FAT_EOC;
+
+	//clean file's contents in FAT
+	while(index_cur_data_blk != FAT_EOC)
+	{
+		uint16_t index_next_data_blk = fat.array[index_cur_data_blk];
+		fat.array[index_cur_data_blk] = 0;
+		index_cur_data_blk = index_next_data_blk;
+	}
+
 	return 0;
-	/* TODO: Phase 2 */
 }
 
 int fs_ls(void)
 {
+	if(!fsmounted) return -1;
+
+	printf("FS Ls:\n");
+
+	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		if(rootdir.array[i].filename[0] != '\0')
+		{
+			printf("file: %s, size: %i, data_blk: %i\n", 
+			rootdir.array[i].filename, rootdir.array[i].size_file_bytes
+			, rootdir.array[i].index_first_data_blk);
+		}
+	}
+
 	return 0;
-	/* TODO: Phase 2 */
 }
 
 int fs_open(const char *filename)
