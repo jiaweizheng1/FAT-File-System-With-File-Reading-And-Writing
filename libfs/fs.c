@@ -206,18 +206,18 @@ int fs_delete(const char *filename)	//IDK how check file is currently open???
 	if(!fsmounted || filename == NULL || strlen(filename) + 1
 		> FS_FILENAME_LEN) return -1;
 
-	int i = 0;
+	int i = 0, found_file = 0;
 
 	for(; i < FS_FILE_MAX_COUNT; i++)
 	{
 		if(strcmp((char*)rootdir.array[i].filename, filename) == 0)
 		{
-			//found
+			found_file = 1;
 			break;
 		}
 	}
 	//file not found
-	if(i == FS_FILE_MAX_COUNT - 1) return -1;
+	if(found_file == 0) return -1;
 
 	//otherwise, clean file's contents in root dir and FAT
 	uint16_t index_cur_data_blk;
