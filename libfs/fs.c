@@ -528,6 +528,7 @@ int fs_write(int fd, void *buf, size_t count)
 			{
 				fs_print("no space", 0);
 				rootdir.array[rootdir_i].size_file_bytes = i;
+				fdtable.fdarray[fd].offset = i;
 				if (i >= offset+count) return count;
 				else return i-offset;
 			}
@@ -548,8 +549,8 @@ int fs_write(int fd, void *buf, size_t count)
 	fs_print("end for loop", 0);
 	
 	fs_print("count", count);
-	//change file size
-	rootdir.array[rootdir_i].size_file_bytes += count;
+	rootdir.array[rootdir_i].size_file_bytes += count; //change file size
+	fdtable.fdarray[fd].offset = i; //change file offset
 	return count;
 }
 
