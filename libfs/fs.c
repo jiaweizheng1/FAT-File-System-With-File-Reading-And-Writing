@@ -462,8 +462,8 @@ int fs_write(int fd, void *buf, size_t count)
 			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
 			//also for memset and memcmp
 			
-			//don't delete this block
-			//comment out b/c no insertion, only overwrite (below is insertion)
+			
+			//only need to overwrite
 			//memcpy(&data[data_idx], &bounce_buf[offset], BLOCK_SIZE-offset); //copy DE
 			//data_idx += BLOCK_SIZE-offset;
 			
