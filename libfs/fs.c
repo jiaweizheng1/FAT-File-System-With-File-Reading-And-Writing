@@ -359,29 +359,29 @@ int fs_write(int fd, void *buf, size_t count)
 int fs_read(int fd, void *buf, size_t count)
 {
 	//validation
-	if (!fsmounted || fd<0 || fd>=FS_OPEN_MAX_COUNT || fd_table[fd] == NULL || buf == NULL) return -1;
+	if (!fsmounted || fd<0 || fd>=FS_OPEN_MAX_COUNT || fdtable.fdarray[fd].filename[0] == '\0' || buf == NULL) return -1;
 	
 	//vars
-	bool first_blk = true;
+	int first_blk = 1; //bool
 	uint8_t data[count]; //=buf //need to iterate byte by byte
-	int data_idx = 0;
+	size_t data_idx = 0;
 	
 	//in fd_table, get offset
-	int offset = fd_table[fd]->offset;
+	size_t offset =  fdtable.fdarray[fd].offset;
 	
 	//in rootdir, get fat_idx
+	size_t fat_idx = 0;
 	for(int i=0; i<FS_FILE_MAX_COUNT; ++i)
 	{
-		if (!strcmp(rootdir.array[i].filename, fd_table[fd]->filename))
+		if(!strcmp((char*)rootdir.array[i].filename, (char*)fdtable.fdarray[fd].filename)) //equal
 		{
 			fat_idx = rootdir.array[i].index_first_data_blk;
 			break;
 		}
 	}
-	
-	int curr = 0;
 
 	//in FAT
+	size_t curr = 0;
 	while (fat_idx != FAT_EOC)
 	{
 		//check offset //may not be in the first block
@@ -399,14 +399,15 @@ int fs_read(int fd, void *buf, size_t count)
 		//copy to data, start at offset if first_blk, end at count
 		if (first_blk)
 		{
-			for (; data_idx<BLOCK_SIZE-offset, data_idx<count; ++data_idx)
-				memcpy(data[data_idx], bounce_buf[offset+data_idx], 1);
-			first_blk = false;
+			//https://stackoverflow.com/questions/17638730/are-multiple-conditions-allowed-in-a-for-loop
+			for (; data_idx<BLOCK_SIZE-offset && data_idx<count; ++data_idx)
+				memcpy(&data[data_idx], &bounce_buf[offset+data_idx], 1);
+			first_blk = 0;
 		}
 		else
 		{
-			for (int i=0; i<BLOCK_SIZE, data_idx<count; ++data_idx, ++i)
-				memcpy(data[data_idx], bounce_buf[i], 1);
+			for (int i=0; i<BLOCK_SIZE && data_idx<count; ++data_idx, ++i)
+				memcpy(&data[data_idx], &bounce_buf[i], 1);
 		}
 			
 		if (data_idx >= count) break; //ends early
@@ -414,7 +415,7 @@ int fs_read(int fd, void *buf, size_t count)
 	}
 	
 	//copy to buf
-	memcpy(buf, data, data_idx); //memcpy(void *dest, const void *src, size_t n)
-	fd_table[fd]->offset += data_idx;
+	memcpy(buf, (void*)data, data_idx); //memcpy(void *dest, const void *src, size_t n)
+	fdtable.fdarray[fd].offset += data_idx;
 	return data_idx;
 }
