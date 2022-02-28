@@ -312,7 +312,6 @@ int fs_close(int fd)
 
 	//otherwise, safe to close fd and reset it for another file
 	fdtable.fdarray[fd].filename[0] = '\0';
-	fdtable.fdarray[fd].offset = 0;
 	fdtable.fd_open--;
 
 	return 0;
