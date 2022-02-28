@@ -64,6 +64,8 @@ static struct Rootdir rootdir;
 static struct FDTable fdtable;
 static int fsmounted;	//boolean; either one fs is mounted or none
 
+//phase 1
+
 int fs_mount(const char *diskname)
 {
 	if(diskname == NULL) return -1;
@@ -181,6 +183,8 @@ int fs_info(void)
 	return 0;
 }
 
+//phase 2
+
 int fs_create(const char *filename)
 {
 	if(!fsmounted || filename == NULL || strlen(filename) + 1
@@ -279,6 +283,8 @@ int fs_ls(void)
 	return 0;
 }
 
+//phase 3
+
 int fs_open(const char *filename)
 {
 	//validation
@@ -358,6 +364,8 @@ int fs_lseek(int fd, size_t offset)
 
 	return 0;
 }
+
+//phase 4
 
 int fs_write(int fd, void *buf, size_t count)
 {
