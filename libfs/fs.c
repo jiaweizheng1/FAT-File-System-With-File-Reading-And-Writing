@@ -9,6 +9,14 @@
 
 #define FAT_EOC 0xFFFF
 
+int DEBUG = 0; //enable/disable printf statements
+
+void fs_print(char* str, int num)
+{
+	if (DEBUG) printf("===%s: %d===\n", str, num);
+	else if (str || num) return; //avoid compiler error
+}
+
 struct Superblock	//unsigned specs
 {
 	uint8_t signature[8]; //ECS150FS
@@ -75,6 +83,8 @@ int fs_mount(const char *diskname)
 
 	//validate FAT using ceiling function
 	//https://www.geeksforgeeks.org/find-ceil-ab-without-using-ceil-function/
+	//check if num_blks_fat == ceil((num_data_blks*2)/BLOCK_SIZE)
+	//ceilVal = (a+b-1)/b, a=num_data_blks*2, b=BLOCK_SIZE, divide b by 2
 	if(superblock.num_blks_fat != (superblock.num_data_blks * 2 + BLOCK_SIZE
 		- 1)/(BLOCK_SIZE)) return -1;
 
@@ -351,9 +361,188 @@ int fs_lseek(int fd, size_t offset)
 
 int fs_write(int fd, void *buf, size_t count)
 {
-	if(fd || buf || count) return -1;
-	return 0;
-	/* TODO: Phase 4 */
+	fs_print("WRITE", 0);
+	
+	//validation
+	if (!fsmounted || fd<0 || fd>=FS_OPEN_MAX_COUNT || fdtable.fdarray[fd].filename[0] == '\0' || buf == NULL) return -1;
+	
+	//in fdtable, get initial offset
+	size_t offset = fdtable.fdarray[fd].offset;
+	fs_print("offset", offset);
+	
+	//in rootdir, get initial fat_idx
+	size_t rootdir_fat_idx = 0;
+	size_t rootdir_i = 0;
+	size_t fat_idx = 0; //to be changed
+	for (int i=0; i<FS_FILE_MAX_COUNT; ++i)
+	{
+		if(!strcmp((char*)rootdir.array[i].filename, (char*)fdtable.fdarray[fd].filename)) //equal
+		{
+			rootdir_i = i; //for curr file entry in rootdir
+			rootdir_fat_idx = rootdir.array[i].index_first_data_blk;
+			fat_idx = rootdir_fat_idx;
+			break;
+		}
+	}
+	fs_print("fat_idx", fat_idx);
+	
+	//in FAT, get vars
+	int first_blk = 1; //bool
+	size_t curr = 0;
+	
+	size_t fat_idx_offset = fat_idx; //to be changed
+	size_t num_data_blks = 0;
+	size_t num_data_blks_used = 0; //before the offset block
+	
+	while (fat_idx != FAT_EOC)
+	{
+		if (first_blk && offset > curr+BLOCK_SIZE)
+		{
+			curr += BLOCK_SIZE;
+			++num_data_blks_used;
+		}
+		else if (first_blk)
+		{
+			fat_idx_offset = fat_idx;
+			first_blk = 0;
+			
+			fs_print("- fat_idx", fat_idx);
+			fs_print("- fat_idx_offset", fat_idx_offset);
+		}
+		++num_data_blks;
+		fat_idx = fat.array[fat_idx];
+	}
+	
+	fs_print("fat_idx_offset", fat_idx_offset);
+	fs_print("num_data_blks", num_data_blks);
+	fs_print("num_data_blks_used", num_data_blks_used);
+	
+	//vars
+	first_blk = 1; //reset
+	fat_idx = fat_idx_offset;
+	uint8_t data[num_data_blks*BLOCK_SIZE+count]; //<=buf, =>disk //need to iterate byte by byte
+	size_t data_idx = 0;
+
+	//in FAT, write to data
+	if (fat_idx == FAT_EOC) //edge case
+	{
+		memcpy(&data[data_idx], buf, count); //copy C
+		data_idx += count;
+		
+		if (DEBUG) for (int j=0; j<10; ++j) fs_print("z", (uint8_t)data[j]);
+		if (DEBUG) for (int j=0; j<10; ++j) fs_print("a", ((uint8_t*)buf)[j]);
+	}
+	
+	while (fat_idx != FAT_EOC) //get all data
+	{
+		//0. get data in DB, copy to bounce_buf
+		//uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
+		//block_read(2+superblock.num_blks_fat+fat_idx, &bounce_buf);
+		
+		//1. copy to data, start at offset if first_blk
+		if (first_blk) //ABDE --> AB C DE
+		{
+			//1.1 get data in DB, copy to bounce_buf
+			uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
+			block_read(2+superblock.num_blks_fat+fat_idx, &bounce_buf);
+			
+			memcpy(&data[data_idx], &bounce_buf[data_idx], offset); //copy AB
+			data_idx += offset;
+		
+			memcpy(&data[data_idx], buf, count+1); //copy C
+			data_idx += count+1; //don't delete +1 //I guess it's for NULL
+			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
+			//also for memset and memcmp
+			
+			//don't delete this block
+			//comment out b/c no insertion, only overwrite (below is insertion)
+			//memcpy(&data[data_idx], &bounce_buf[offset], BLOCK_SIZE-offset); //copy DE
+			//data_idx += BLOCK_SIZE-offset;
+			
+			first_blk = 0;
+			
+			if (DEBUG) for (int j=0; j<10; ++j) fs_print("x", data[j]);
+			fs_print((char*)bounce_buf, 0);
+			fs_print((char*)buf, 0);
+			fs_print((char*)data, 0);
+		}
+		else //ABCD --> ABDE
+		{
+			//memcpy(&data[data_idx], &bounce_buf, BLOCK_SIZE); //copy ABDE
+			block_read(2+superblock.num_blks_fat+fat_idx, &data[data_idx]); //copy ABDE, no need for bounce_buf 
+			data_idx += BLOCK_SIZE;
+			
+			if (DEBUG) for (size_t j=data_idx; j<data_idx+10; ++j) fs_print("y", data[j]);
+		}
+		
+		fat_idx = fat.array[fat_idx];
+	} //end while
+	fs_print("end while", 0);
+	fs_print("data_idx", data_idx);
+	fs_print("fat_idx_offset == FAT_EOC", fat_idx_offset == FAT_EOC);
+
+	//2. copy to DB (block write back), allocate new space if needed (check disk space) + change FAT
+	//in FAT, write to DB
+	size_t i=0;
+	size_t j=0;
+	size_t prev_fat_idx;
+	(rootdir_fat_idx == FAT_EOC) ? (prev_fat_idx = rootdir_fat_idx) : (prev_fat_idx = fat_idx_offset); //edge case //don't delete ()
+	fat_idx = fat_idx_offset;
+	for (; i<data_idx; i+=BLOCK_SIZE, ++num_data_blks_used, prev_fat_idx=fat_idx, fat_idx=fat.array[fat_idx]) //try to write all data
+	{
+		fs_print("prev_fat_idx", prev_fat_idx);
+		fs_print("fat_idx", fat_idx);
+
+		//check space
+		if (num_data_blks_used >= num_data_blks) //need to allocate new space + change FAT
+		//same as if (fat_idx == FAT_EOC)
+		{
+			//in FAT array, find first-fit
+			int space_allocated = 0;
+			for (j=0; j<superblock.num_data_blks; ++j) //num of FAT *entries* == superblock.num_data_blks
+			{
+				if (fat.array[j] == 0) //empty
+				{
+					//now fat_idx == FAT_EOC
+					//change rootdir if needed //edge case
+					fs_print("change root/fat", 0);
+					(rootdir_fat_idx == FAT_EOC) ? (rootdir.array[rootdir_i].index_first_data_blk = j) : (fat.array[prev_fat_idx] = j); //instead of FAT_EOC
+					fat_idx = j; //don't delete
+					fs_print("changed root/fat", 1);
+					fat.array[j] = FAT_EOC;
+					space_allocated = 1;
+					
+					fs_print("j", j);
+					break;
+				}
+			}
+			if (!space_allocated) //not enough space
+			{
+				fs_print("no space", 0);
+				rootdir.array[rootdir_i].size_file_bytes = i;
+				if (i >= offset+count) return count;
+				else return i-offset;
+			}
+		}
+
+		fs_print("WRITE BACK", 0);
+		fs_print("superblock.num_blks_fat", superblock.num_blks_fat);
+		fs_print("fat_idx", fat_idx);
+		fs_print("sum", 2+superblock.num_blks_fat+fat_idx);
+		
+		//write back to disk
+		block_write(2+superblock.num_blks_fat+fat_idx, &data[i]);
+		
+		fs_print("fat_idx", fat_idx);
+		fs_print("fat.array[fat_idx]", fat.array[fat_idx]);
+		fs_print("data[i]", data[i]);
+	} //end for loop
+	fs_print("end for loop", 0);
+	
+	fs_print("count", count);
+	//change file size
+	rootdir.array[rootdir_i].size_file_bytes += count;
+	return count;
 }
 
 int fs_read(int fd, void *buf, size_t count)
@@ -361,17 +550,12 @@ int fs_read(int fd, void *buf, size_t count)
 	//validation
 	if (!fsmounted || fd<0 || fd>=FS_OPEN_MAX_COUNT || fdtable.fdarray[fd].filename[0] == '\0' || buf == NULL) return -1;
 	
-	//vars
-	int first_blk = 1; //bool
-	uint8_t data[count]; //=buf //need to iterate byte by byte
-	size_t data_idx = 0;
-	
-	//in fd_table, get offset
-	size_t offset =  fdtable.fdarray[fd].offset;
+	//in fdtable, get offset
+	size_t offset = fdtable.fdarray[fd].offset;
 	
 	//in rootdir, get fat_idx
 	size_t fat_idx = 0;
-	for(int i=0; i<FS_FILE_MAX_COUNT; ++i)
+	for (int i=0; i<FS_FILE_MAX_COUNT; ++i)
 	{
 		if(!strcmp((char*)rootdir.array[i].filename, (char*)fdtable.fdarray[fd].filename)) //equal
 		{
@@ -379,6 +563,11 @@ int fs_read(int fd, void *buf, size_t count)
 			break;
 		}
 	}
+	
+	//vars
+	int first_blk = 1; //bool
+	uint8_t data[count]; //=>buf //need to iterate byte by byte
+	size_t data_idx = 0;
 
 	//in FAT
 	size_t curr = 0;
@@ -392,11 +581,11 @@ int fs_read(int fd, void *buf, size_t count)
 			continue;
 		}
 		
-		//get data in DB, copy to bounce_buf
+		//1. get data in DB, copy to bounce_buf
 		uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
 		block_read(2+superblock.num_blks_fat+fat_idx, bounce_buf);
 			
-		//copy to data, start at offset if first_blk, end at count
+		//2. copy to data, start at offset if first_blk, end at count
 		if (first_blk)
 		{
 			//https://stackoverflow.com/questions/17638730/are-multiple-conditions-allowed-in-a-for-loop
@@ -414,8 +603,8 @@ int fs_read(int fd, void *buf, size_t count)
 		fat_idx = fat.array[fat_idx];
 	}
 	
-	//copy to buf
-	memcpy(buf, (void*)data, data_idx); //memcpy(void *dest, const void *src, size_t n)
+	//3. copy to buf
+	memcpy(buf, data, data_idx); //memcpy(void *dest, const void *src, size_t n)
 	fdtable.fdarray[fd].offset += data_idx;
 	return data_idx;
 }
