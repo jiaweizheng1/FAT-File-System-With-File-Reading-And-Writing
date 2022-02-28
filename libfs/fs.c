@@ -40,13 +40,13 @@ struct Rootdir
 
 struct FD	//packed not needed because this info is not written to disk
 {
-	uint8_t filename[FS_FILENAME_LEN];
-	size_t offset;
+	char filename[FS_FILENAME_LEN];
+	size_t offset;	//offset can not be negative
 };
 
 struct FDTable
 {
-	struct FD fd[FS_OPEN_MAX_COUNT];
+	struct FD fdarray[FS_OPEN_MAX_COUNT];
 	int fd_open; //max is FS_OPEN_MAX_COUNT or 32
 };
 
@@ -85,6 +85,7 @@ int fs_mount(const char *diskname)
 		return -1; //first data index
 
 	//map or mount FAT; 4096 bytes * num FAT blocks
+	//a different procedure because fat is not one block like the others
 	fat.array = (uint16_t*)malloc(sizeof(uint16_t) * 2048 
 		* superblock.num_blks_fat);
 	void *buf = (void*)malloc(BLOCK_SIZE);
@@ -102,7 +103,8 @@ int fs_mount(const char *diskname)
 	//map or mount root dir
 	if(block_read(superblock.root_dir_blk_index, &rootdir) == -1) return -1;
 
-	fdtable.fd_open = 0;
+	//reset fd table
+	memset(&fdtable, 0, sizeof(fdtable));
 
 	fsmounted = 1;
 
@@ -201,10 +203,19 @@ int fs_create(const char *filename)
 	return 0;
 }
 
-int fs_delete(const char *filename)	//IDK how check file is currently open???
+int fs_delete(const char *filename)
 {
 	if(!fsmounted || filename == NULL || strlen(filename) + 1
 		> FS_FILENAME_LEN) return -1;
+
+	//check if the file is currently open in fd_table
+	for(int i = 0; i < FS_OPEN_MAX_COUNT; i++)
+	{
+		if(strcmp(fdtable.fdarray[i].filename, filename) == 0)
+		{
+			return -1;
+		}
+	}
 
 	int i = 0, found_file = 0;
 
@@ -260,30 +271,83 @@ int fs_ls(void)
 
 int fs_open(const char *filename)
 {
-	if(filename) return -1;
-	return 0;
-	/* TODO: Phase 3 */
+	//validation
+	if(!fsmounted || filename == NULL || strlen(filename) + 1
+		> FS_FILENAME_LEN || fdtable.fd_open == FS_OPEN_MAX_COUNT) return -1;
+
+	//validate file is already created in root dir
+	int file_created = 0;
+	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		if(strcmp((char*)rootdir.array[i].filename, filename) == 0) //equal
+		{
+			file_created = 1;
+			break;
+		}
+	}
+	if(file_created == 0) return -1;
+
+	//get an empty fd
+	int fd = 0;
+	for(; fd < FS_OPEN_MAX_COUNT; fd++)
+	{
+		//apply same concept for when a entry is empty in root dir
+		if(fdtable.fdarray[fd].filename[0] == '\0')
+		{
+			memcpy(fdtable.fdarray[fd].filename, filename, FS_FILENAME_LEN);
+			fdtable.fdarray[fd].offset = 0;
+			fdtable.fd_open++;
+			break;
+		}
+	}
+	
+	return fd;
 }
 
 int fs_close(int fd)
 {
-	if(fd) return -1;
+	//validation
+	if(!fsmounted || fd < 0 || fd >= FS_OPEN_MAX_COUNT 
+		|| fdtable.fdarray[fd].filename[0] == '\0') return -1;
+
+	//otherwise, safe to close fd and reset it for another file
+	fdtable.fdarray[fd].filename[0] = '\0';
+	fdtable.fdarray[fd].offset = 0;
+	fdtable.fd_open--;
+
 	return 0;
-	/* TODO: Phase 3 */
 }
 
 int fs_stat(int fd)
 {
-	if(fd) return -1;
-	return 0;
-	/* TODO: Phase 3 */
+	//validation
+	if(!fsmounted || fd < 0 || fd >= FS_OPEN_MAX_COUNT 
+		|| fdtable.fdarray[fd].filename[0] == '\0') return -1;
+
+	//otherwise, return file size
+	uint32_t file_size = -1;
+	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		if(strcmp((char*)rootdir.array[i].filename, 
+		fdtable.fdarray[fd].filename) == 0)
+		{
+			file_size = rootdir.array[i].size_file_bytes;
+		}
+	}
+
+	return file_size;
 }
 
 int fs_lseek(int fd, size_t offset)
 {
-	if(fd || offset) return -1;
+	//validation
+	if(!fsmounted || fd < 0 || fd >= FS_OPEN_MAX_COUNT 
+		|| offset > (size_t)fs_stat(fd)) return -1;
+
+	//reset the offset
+	fdtable.fdarray[fd].offset = offset;
+
 	return 0;
-	/* TODO: Phase 3 */
 }
 
 int fs_write(int fd, void *buf, size_t count)
@@ -295,7 +359,63 @@ int fs_write(int fd, void *buf, size_t count)
 
 int fs_read(int fd, void *buf, size_t count)
 {
-	if(fd || buf || count) return -1;
-	return 0;
-	/* TODO: Phase 4 */
+	//validation
+	if (!fsmounted || fd<0 || fd>=FS_OPEN_MAX_COUNT || fd_table[fd] == NULL || buf == NULL) return -1;
+	
+	//vars
+	bool first_blk = true;
+	uint8_t data[count]; //=buf //need to iterate byte by byte
+	int data_idx = 0;
+	
+	//in fd_table, get offset
+	int offset = fd_table[fd]->offset;
+	
+	//in rootdir, get fat_idx
+	for(int i=0; i<FS_FILE_MAX_COUNT; ++i)
+	{
+		if (!strcmp(rootdir.array[i].filename, fd_table[fd]->filename))
+		{
+			fat_idx = rootdir.array[i].index_first_data_blk;
+			break;
+		}
+	}
+	
+	int curr = 0;
+
+	//in FAT
+	while (fat_idx != FAT_EOC)
+	{
+		//check offset //may not be in the first block
+		if (first_blk && offset > curr+BLOCK_SIZE)
+		{
+			curr += BLOCK_SIZE;
+			fat_idx = fat.array[fat_idx];
+			continue;
+		}
+		
+		//get data in DB, copy to bounce_buf
+		uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
+		block_read(2+superblock.num_blks_fat+fat_idx, bounce_buf);
+			
+		//copy to data, start at offset if first_blk, end at count
+		if (first_blk)
+		{
+			for (; data_idx<BLOCK_SIZE-offset, data_idx<count; ++data_idx)
+				memcpy(data[data_idx], bounce_buf[offset+data_idx], 1);
+			first_blk = false;
+		}
+		else
+		{
+			for (int i=0; i<BLOCK_SIZE, data_idx<count; ++data_idx, ++i)
+				memcpy(data[data_idx], bounce_buf[i], 1);
+		}
+			
+		if (data_idx >= count) break; //ends early
+		fat_idx = fat.array[fat_idx];
+	}
+	
+	//copy to buf
+	memcpy(buf, data, data_idx); //memcpy(void *dest, const void *src, size_t n)
+	fd_table[fd]->offset += data_idx;
+	return data_idx;
 }
