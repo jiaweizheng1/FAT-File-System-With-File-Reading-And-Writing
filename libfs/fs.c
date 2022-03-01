@@ -447,8 +447,9 @@ int fs_write(int fd, void *buf, size_t count)
 			memcpy(&data[data_idx], &bounce_buf[data_idx], offset); //copy AB
 			data_idx += offset;
 		
-			memcpy(&data[data_idx], buf, count+1); //copy C
-			data_idx += count+1; //don't delete +1 //I guess it's for the NULL byte / EOF
+			memcpy(&data[data_idx], buf, count); //copy C
+			data_idx += count; //don't delete +1 //I guess it's for the NULL byte / EOF
+			//deleted +1 b/c now it works
 			//https://stackoverflow.com/questions/12389518/representing-eof-in-c-code
 			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
 			//also for memset and memcmp
