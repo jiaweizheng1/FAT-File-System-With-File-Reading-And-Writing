@@ -52,7 +52,7 @@ struct FD	//packed not needed because this info is not written to disk
 static struct Superblock *superblock;
 static struct FATEntry *fat;
 static struct RootDirEntry *rootdir;
-static struct FD fdtable[FS_OPEN_MAX_COUNT];
+static struct FD *fdtable;
 static int fd_open;
 static bool fsmounted;	//boolean; either one fs is mounted or none
 
@@ -105,8 +105,8 @@ int fs_mount(const char *diskname)
 	rootdir = malloc(BLOCK_SIZE);
 	if(block_read(superblock->root_dir_blk_index, rootdir) == -1) return -1;
 
-	//reset fd table
-	memset(fdtable, 0, sizeof(fdtable));
+	//allocate and reset fd table
+	fdtable = calloc(FS_OPEN_MAX_COUNT, sizeof(struct FD));
 
 	fsmounted = true;
 
@@ -136,6 +136,7 @@ int fs_umount(void)
 	free(superblock);
 	free(fat);
 	free(rootdir);
+	free(fdtable);
 
 	fsmounted = false;
 
@@ -347,7 +348,8 @@ int fs_lseek(int fd, size_t offset)
 {
 	//validation
 	if(!fsmounted || fd < 0 || fd >= FS_OPEN_MAX_COUNT 
-		|| offset > (size_t)fs_stat(fd)) return -1;
+		|| offset > (size_t)fs_stat(fd)
+		|| fdtable[fd].filename[0] == '\0') return -1;
 
 	//set new offset
 	fdtable[fd].offset = offset;
