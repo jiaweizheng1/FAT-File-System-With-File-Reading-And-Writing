@@ -359,6 +359,54 @@ int fs_lseek(int fd, size_t offset)
 
 //phase 4
 
+//---start of helper functions
+uint16_t index_data_blk(int fd, size_t file_offset)
+{
+	//extract index_first_data_blk of an file entry in root dir
+	int data_start_index = 0;
+	for (int i = 0; i < FS_FILE_MAX_COUNT; ++i)
+	{
+		if(strcmp((char*)rootdir[i].filename, fdtable[fd].filename) == 0)
+		{
+			data_start_index = rootdir[i].index_first_data_blk;
+			break;
+		}
+	}
+
+	//index of data blk according to offset and the start index
+	//update data_start_index using fat entry pointers
+	//Example: we read 1st block if offset 4095 and 2nd block if offset 4096
+	int num_blk_skip = file_offset / BLOCK_SIZE;
+	while(num_blk_skip > 0)
+	{
+		data_start_index = fat[data_start_index].value;
+		num_blk_skip--;
+	}
+
+	return data_start_index;
+}
+
+uint16_t allocate_new_data_blk()
+{
+	//allocate the first avaliable fat entry and data block
+	//note claiming fat entry 0 or data blk 0 is not allowed by disk format
+	for(uint16_t fat_index = 1; fat_index < superblock->num_data_blks
+		; fat_index++)
+	{
+		if(fat[fat_index].value == 0)
+		{
+			fat[fat_index].value = FAT_EOC;
+			return fat_index;
+		}
+	}
+
+	//else failed to allocate a new data blk
+	//note again claiming data blk 0 is illegal by disk format
+	//so this will be our error flag
+	return 0;
+}
+//---end of helper functions
+
 int fs_write(int fd, void *buf, size_t count)
 {
 	fs_print("WRITE", 0);
@@ -552,81 +600,63 @@ int fs_read(int fd, void *buf, size_t count)
 	//validation
 	if (!fsmounted || fd < 0 || fd >= FS_OPEN_MAX_COUNT || 
 		fdtable[fd].filename[0] == '\0' || buf == NULL) return -1;
-	
-	//in fdtable, get offset
-	size_t offset = fdtable[fd].offset;
-	
-	//in rootdir, get fat_idx
-	uint16_t fat_idx = 0;
-	size_t file_size = 0;
-	for (int i = 0; i < FS_FILE_MAX_COUNT; ++i)
-	{
-		if(!strcmp((char*)rootdir[i].filename, (char*)fdtable[fd].filename)) //equal
-		{
-			fat_idx = rootdir[i].index_first_data_blk;
-			file_size = rootdir[i].size_file_bytes;
-			break;
-		}
-	}
-	
-	//vars
-	bool first_blk = true; //bool
-	uint8_t data[count]; //=>buf //need to iterate byte by byte
-	size_t data_idx = 0;
 
-	//in FAT
-	size_t curr = 0;
-	while (fat_idx != FAT_EOC)
+	if(count == 0) return 0; //user input want to read nothing
+
+	//prep
+	uint32_t file_size = fs_stat(fd);
+
+	if(file_size == 0) return 0; //nothing to read for a empty file
+
+	size_t offset = fdtable[fd].offset;
+
+	//Example: file size 1 then file index maximum should be 0
+	//read nothing if offset is already pass file's contents
+	if(offset + 1 > file_size)	return 0;
+
+	//Example: file size 2 and file index range 0 to 1
+	//update count to readable number of bytes left
+	//if count > readable number of bytes left
+	//file_size - offset is readable number of bytes left
+	if(count > file_size - offset) count = file_size - offset;
+
+	//otherwise, valid for reading so
+	//get index of first data block in data array according to offset
+	//dont need to error check in helper function because already did it here
+	uint16_t file_data_blk_idex = index_data_blk(fd, offset);	
+	//special case left index for reading first block
+	int left = offset % BLOCK_SIZE;
+	int amount_to_read_in_blk;
+	int bytes_read = 0;
+	//bounce buffer with index 0 to 4095
+	uint8_t bounce_buffer[BLOCK_SIZE];
+	while(count > 0)
 	{
-		//check offset //may not be in the first block
-		if (first_blk && offset > curr + BLOCK_SIZE)
+		block_read(superblock->data_blk_start_index + file_data_blk_idex
+			, (void*)bounce_buffer);
+
+		if(left + count > BLOCK_SIZE)
 		{
-			curr += BLOCK_SIZE;
-			fat_idx = fat[fat_idx].value;
-			continue;
+			amount_to_read_in_blk = BLOCK_SIZE - left;
 		}
+		else	//special case for reading last blk or total one blk
+		{
+			//read blk from index 0 up to count bytes left
+			amount_to_read_in_blk = count;
+		}
+
+		memcpy(buf, bounce_buffer + left, amount_to_read_in_blk);
+
+		buf += amount_to_read_in_blk;	//move ptr in input buffer
+		count -= amount_to_read_in_blk;
+
+		left = 0; //for subsequent blks other than first blk, start at index 0
 		
-		//1. get data in DB, copy to bounce_buf
-		//uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
-		//block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
-			
-		//2. copy to data, start at offset if first_blk, end at count
-		if (first_blk)
-		{
-			uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
-			block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
-			
-			//https://stackoverflow.com/questions/17638730/are-multiple-conditions-allowed-in-a-for-loop
-			for (; data_idx < BLOCK_SIZE - offset && data_idx < count && offset + data_idx < file_size;
-			     	++data_idx)
-					memcpy(&data[data_idx], &bounce_buf[offset+data_idx], 1);
-			first_blk = false;
-		}
-		else
-		{
-			if (data_idx+BLOCK_SIZE < count && offset + data_idx+BLOCK_SIZE < file_size) //middle blks
-			{
-				//no need for bounce_buf
-				block_read(2 + superblock->num_blks_fat + fat_idx, &data[data_idx]);
-				data_idx += BLOCK_SIZE;
-			}
-			else //last_blk
-			{
-				uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
-				block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
-				
-				for (int i = 0; i < BLOCK_SIZE && data_idx < count && offset + data_idx < file_size; 
-				++data_idx, ++i)
-					memcpy(&data[data_idx], &bounce_buf[i], 1);
-			}
-		}
-		
-		if (data_idx >= count) break; //ends early
-		fat_idx = fat[fat_idx].value;
+		//increment bytes read counter and move to reading next blk
+		bytes_read += amount_to_read_in_blk;
+		file_data_blk_idex = fat[file_data_blk_idex].value;
 	}
-	
-	//3. copy to buf
-	memcpy(buf, data, data_idx); //memcpy(void *dest, const void *src, size_t n)
-	fdtable[fd].offset += data_idx;
-	return data_idx;
+
+	fdtable[fd].offset += bytes_read;
+	return bytes_read;
 }
