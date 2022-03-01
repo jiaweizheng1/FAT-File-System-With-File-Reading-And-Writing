@@ -447,9 +447,8 @@ int fs_write(int fd, void *buf, size_t count)
 			memcpy(&data[data_idx], &bounce_buf[data_idx], offset); //copy AB
 			data_idx += offset;
 		
-			memcpy(&data[data_idx], buf, count); //copy C
-			data_idx += count; //don't delete +1 //I guess it's for the NULL byte / EOF
-			//deleted +1 b/c now it works
+			memcpy(&data[data_idx], buf, count+1); //copy C
+			data_idx += count+1; //Don't delete +1 //I guess it's for the NULL byte / EOF
 			//https://stackoverflow.com/questions/12389518/representing-eof-in-c-code
 			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
 			//also for memset and memcmp
@@ -466,7 +465,7 @@ int fs_write(int fd, void *buf, size_t count)
 			fs_print((char*)buf, 0);
 			fs_print((char*)data, 0);
 		}
-		else //ABCD --> ABDE
+		else //ABCD --> ABDE //never reached b/c only overwrite
 		{
 			//memcpy(&data[data_idx], &bounce_buf, BLOCK_SIZE); //copy ABDE
 			block_read(2+superblock->num_blks_fat+fat_idx, &data[data_idx]); //copy ABDE, no need for bounce_buf 
@@ -532,7 +531,7 @@ int fs_write(int fd, void *buf, size_t count)
 		fs_print("sum", 2+superblock->num_blks_fat+fat_idx);
 		
 		//write back to disk
-		block_write(2+superblock->num_blks_fat+fat_idx, &data[i]);
+		block_write(2+superblock->num_blks_fat+fat_idx, &data[i]); //can use a bounce_buf for first_blk and last_blk instead, since only overwrite
 		
 		fs_print("fat_idx", fat_idx);
 		fs_print("fat[fat_idx].value", fat[fat_idx].value);
