@@ -448,7 +448,8 @@ int fs_write(int fd, void *buf, size_t count)
 			data_idx += offset;
 		
 			memcpy(&data[data_idx], buf, count+1); //copy C
-			data_idx += count+1; //don't delete +1 //I guess it's for NULL
+			data_idx += count+1; //don't delete +1 //I guess it's for the NULL byte / EOF
+			//https://stackoverflow.com/questions/12389518/representing-eof-in-c-code
 			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
 			//also for memset and memcmp
 			
@@ -555,11 +556,13 @@ int fs_read(int fd, void *buf, size_t count)
 	
 	//in rootdir, get fat_idx
 	uint16_t fat_idx = 0;
+	size_t file_size = 0;
 	for (int i = 0; i < FS_FILE_MAX_COUNT; ++i)
 	{
 		if(!strcmp((char*)rootdir[i].filename, (char*)fdtable[fd].filename)) //equal
 		{
 			fat_idx = rootdir[i].index_first_data_blk;
+			file_size = rootdir[i].size_file_bytes;
 			break;
 		}
 	}
@@ -589,14 +592,14 @@ int fs_read(int fd, void *buf, size_t count)
 		if (first_blk)
 		{
 			//https://stackoverflow.com/questions/17638730/are-multiple-conditions-allowed-in-a-for-loop
-			for (; data_idx < BLOCK_SIZE - offset && data_idx<count
-				; ++data_idx)
+			for (; data_idx < BLOCK_SIZE - offset && data_idx < count && offset + data_idx < file_size;
+			     	++data_idx)
 					memcpy(&data[data_idx], &bounce_buf[offset+data_idx], 1);
 			first_blk = false;
 		}
 		else
 		{
-			for (int i = 0; i < BLOCK_SIZE && data_idx < count; 
+			for (int i = 0; i < BLOCK_SIZE && data_idx < count && offset + data_idx < file_size; 
 				++data_idx, ++i)
 					memcpy(&data[data_idx], &bounce_buf[i], 1);
 		}
