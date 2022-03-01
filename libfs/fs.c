@@ -570,7 +570,7 @@ int fs_read(int fd, void *buf, size_t count)
 	//vars
 	bool first_blk = true; //bool
 	uint8_t data[count]; //=>buf //need to iterate byte by byte
-	uint16_t data_idx = 0;
+	size_t data_idx = 0;
 
 	//in FAT
 	size_t curr = 0;
@@ -585,12 +585,15 @@ int fs_read(int fd, void *buf, size_t count)
 		}
 		
 		//1. get data in DB, copy to bounce_buf
-		uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
-		block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
+		//uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
+		//block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
 			
 		//2. copy to data, start at offset if first_blk, end at count
 		if (first_blk)
 		{
+			uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
+			block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
+			
 			//https://stackoverflow.com/questions/17638730/are-multiple-conditions-allowed-in-a-for-loop
 			for (; data_idx < BLOCK_SIZE - offset && data_idx < count && offset + data_idx < file_size;
 			     	++data_idx)
@@ -599,9 +602,21 @@ int fs_read(int fd, void *buf, size_t count)
 		}
 		else
 		{
-			for (int i = 0; i < BLOCK_SIZE && data_idx < count && offset + data_idx < file_size; 
+			if (data_idx+BLOCK_SIZE < count && offset + data_idx+BLOCK_SIZE < file_size) //middle blks
+			{
+				//no need for bounce_buf
+				block_read(2 + superblock->num_blks_fat + fat_idx, &data[data_idx]);
+				data_idx += BLOCK_SIZE;
+			}
+			else //last_blk
+			{
+				uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
+				block_read(2 + superblock->num_blks_fat + fat_idx, bounce_buf);
+				
+				for (int i = 0; i < BLOCK_SIZE && data_idx < count && offset + data_idx < file_size; 
 				++data_idx, ++i)
 					memcpy(&data[data_idx], &bounce_buf[i], 1);
+			}
 		}
 		
 		if (data_idx >= count) break; //ends early
