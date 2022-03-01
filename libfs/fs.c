@@ -32,7 +32,7 @@ struct Superblock	//unsigned specs
 
 struct FATEntry
 {
-	uint16_t value;
+	uint16_t value; //can be 0/num/FAT_EOC
 } __attribute__((__packed__));
 
 struct RootDirEntry
