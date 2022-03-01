@@ -448,7 +448,7 @@ int fs_write(int fd, void *buf, size_t count)
 			data_idx += offset;
 		
 			memcpy(&data[data_idx], buf, count+1); //copy C
-			data_idx += count+1; //Don't delete +1 //I guess it's for the NULL byte / EOF
+			data_idx += count+1; //Don't delete +1 (otherwise error randomly happens) //I guess it's for the NULL byte / EOF
 			//https://stackoverflow.com/questions/12389518/representing-eof-in-c-code
 			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
 			//also for memset and memcmp
