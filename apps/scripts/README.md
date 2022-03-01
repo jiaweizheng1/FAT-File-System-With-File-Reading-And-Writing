@@ -73,6 +73,7 @@ $ ./test_fs.x script test.fs scripts/script.example
 Also:
 
 ```console
+$ cd apps/
 $ ./test_fs_student.sh
 ...
 ```
