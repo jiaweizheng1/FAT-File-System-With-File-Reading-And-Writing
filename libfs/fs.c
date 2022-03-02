@@ -80,8 +80,9 @@ int fs_mount(const char *diskname)
 	//https://www.geeksforgeeks.org/find-ceil-ab-without-using-ceil-function/
 	//check if num_blks_fat == ceil((num_data_blks*2)/BLOCK_SIZE)
 	//ceilVal = (a+b-1)/b, a=num_data_blks*2, b=BLOCK_SIZE, divide b by 2
-	if(superblock->num_blks_fat != (superblock->num_data_blks * 2 + BLOCK_SIZE
-		- 1)/(BLOCK_SIZE)) return -1;
+	if(superblock->num_blks_fat != ((superblock->num_data_blks * 2) / 
+		BLOCK_SIZE) + (((superblock->num_data_blks * 2) % BLOCK_SIZE) != 0))
+		return -1;
 
 	//validate disk order
 	if(1 + superblock->num_blks_fat != superblock->root_dir_blk_index)
@@ -161,6 +162,8 @@ int fs_info(void)
 		//free entry in FAT if value is 0
 		if(fat[i].value == 0) num_fat_free_entries++;
 	}
+	printf("fat_free_ratio=%d/%d\n", num_fat_free_entries, 
+	superblock->num_data_blks);
 
 	int num_rootdir_free_entries = 0;
 	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
@@ -168,9 +171,6 @@ int fs_info(void)
 		//free entry in root dir if first char of filename is null
 		if(rootdir[i].filename[0] == '\0') num_rootdir_free_entries++;
 	}
-
-	printf("fat_free_ratio=%d/%d\n", num_fat_free_entries, 
-		superblock->num_data_blks);
 	printf("rdir_free_ratio=%d/%d\n", num_rootdir_free_entries,
 		FS_FILE_MAX_COUNT);
 	
@@ -225,6 +225,7 @@ int fs_delete(const char *filename)
 		}
 	}
 
+	//find file in root dir
 	int i = 0;
 	bool found_file = false;
 	for(; i < FS_FILE_MAX_COUNT; i++)
@@ -363,8 +364,8 @@ int fs_lseek(int fd, size_t offset)
 uint16_t index_data_blk(int fd, size_t file_offset)
 {
 	//extract index_first_data_blk of an file entry in root dir
-	int data_start_index = 0;
-	for (int i = 0; i < FS_FILE_MAX_COUNT; ++i)
+	uint16_t data_start_index = 0;
+	for (int i = 0; i < FS_FILE_MAX_COUNT; i++)
 	{
 		if(strcmp((char*)rootdir[i].filename, fdtable[fd].filename) == 0)
 		{
@@ -377,7 +378,7 @@ uint16_t index_data_blk(int fd, size_t file_offset)
 	//update data_start_index using fat entry pointers
 	//Example: we read 1st block if offset 4095 and 2nd block if offset 4096
 	int num_blk_skip = file_offset / BLOCK_SIZE;
-	while(num_blk_skip > 0)
+	while(num_blk_skip > 0 && data_start_index != FAT_EOC)
 	{
 		data_start_index = fat[data_start_index].value;
 		num_blk_skip--;
@@ -409,190 +410,103 @@ uint16_t allocate_new_data_blk()
 
 int fs_write(int fd, void *buf, size_t count)
 {
-	fs_print("WRITE", 0);
-	
 	//validation
-	if (!fsmounted || fd<0 || fd>=FS_OPEN_MAX_COUNT || fdtable[fd].filename[0] == '\0' || buf == NULL) return -1;
-	
-	//in fdtable, get initial offset
+	if (!fsmounted || fd < 0 || fd >= FS_OPEN_MAX_COUNT || 
+		fdtable[fd].filename[0] == '\0' || buf == NULL) return -1;
+
+	if(count == 0) return 0; //user input want to write nothing
+
+	//prep
+	//find file entry in root dir for changing file size if necessary
+	struct RootDirEntry *rootdirentry = NULL;
+	for(int i = 0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		if(strcmp((char*)rootdir[i].filename, 
+		fdtable[fd].filename) == 0)
+		{
+			rootdirentry = &rootdir[i];
+		}
+	}
 	size_t offset = fdtable[fd].offset;
-	fs_print("offset", offset);
-	
-	//in rootdir, get initial fat_idx
-	size_t rootdir_fat_idx = 0;
-	size_t rootdir_i = 0;
-	size_t fat_idx = 0; //to be changed
-	for (int i=0; i<FS_FILE_MAX_COUNT; ++i)
-	{
-		if(!strcmp((char*)rootdir[i].filename, (char*)fdtable[fd].filename)) //equal
-		{
-			rootdir_i = i; //for curr file entry in rootdir
-			rootdir_fat_idx = rootdir[i].index_first_data_blk;
-			fat_idx = rootdir_fat_idx;
-			break;
-		}
-	}
-	fs_print("fat_idx", fat_idx);
-	
-	//in FAT, get vars
-	int first_blk = 1; //bool
-	size_t curr = 0;
-	
-	size_t fat_idx_offset = fat_idx; //to be changed
-	size_t num_data_blks = 0;
-	size_t num_data_blks_used = 0; //before the offset block
-	
-	while (fat_idx != FAT_EOC)
-	{
-		if (first_blk && offset > curr+BLOCK_SIZE)
-		{
-			curr += BLOCK_SIZE;
-			++num_data_blks_used;
-		}
-		else if (first_blk)
-		{
-			fat_idx_offset = fat_idx;
-			first_blk = 0;
-			
-			fs_print("- fat_idx", fat_idx);
-			fs_print("- fat_idx_offset", fat_idx_offset);
-		}
-		++num_data_blks;
-		fat_idx = fat[fat_idx].value;
-	}
-	
-	fs_print("fat_idx_offset", fat_idx_offset);
-	fs_print("num_data_blks", num_data_blks);
-	fs_print("num_data_blks_used", num_data_blks_used);
-	
-	//vars
-	first_blk = 1; //reset
-	fat_idx = fat_idx_offset;
-	uint8_t data[num_data_blks*BLOCK_SIZE+count]; //<=buf, =>disk //need to iterate byte by byte
-	size_t data_idx = 0;
 
-	//in FAT, write to data
-	if (fat_idx == FAT_EOC) //edge case
+	//allocate more blks if necessary
+	if(offset + count > rootdirentry->size_file_bytes)
 	{
-		memcpy(&data[data_idx], buf, count); //copy C
-		data_idx += count;
-		
-		if (DEBUG) for (int j=0; j<10; ++j) fs_print("z", (uint8_t)data[j]);
-		if (DEBUG) for (int j=0; j<10; ++j) fs_print("a", ((uint8_t*)buf)[j]);
-	}
-	
-	while (fat_idx != FAT_EOC) //get all data
-	{
-		//0. get data in DB, copy to bounce_buf
-		//uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
-		//block_read(2+superblock->num_blks_fat+fat_idx, &bounce_buf);
-		
-		//1. copy to data, start at offset if first_blk
-		if (first_blk) //ABDE --> AB C DE
+		//empty file gets its own first block
+		if(rootdirentry->index_first_data_blk == FAT_EOC)
 		{
-			//1.1 get data in DB, copy to bounce_buf
-			uint8_t bounce_buf[BLOCK_SIZE]; //Each block is 4096 bytes //need to iterate byte by byte
-			block_read(2+superblock->num_blks_fat+fat_idx, &bounce_buf);
-			
-			memcpy(&data[data_idx], &bounce_buf[data_idx], offset); //copy AB
-			data_idx += offset;
-		
-			memcpy(&data[data_idx], buf, count+1); //copy C
-			data_idx += count+1; //Don't delete +1 (otherwise error randomly happens) //I guess it's for the NULL byte / EOF
-			//https://stackoverflow.com/questions/12389518/representing-eof-in-c-code
-			//https://www.tutorialspoint.com/c_standard_library/c_function_memcpy.htm
-			//also for memset and memcmp
-			
-			
-			//only need to overwrite
-			//memcpy(&data[data_idx], &bounce_buf[offset], BLOCK_SIZE-offset); //copy DE
-			//data_idx += BLOCK_SIZE-offset;
-			
-			first_blk = 0;
-			
-			if (DEBUG) for (int j=0; j<10; ++j) fs_print("x", data[j]);
-			fs_print((char*)bounce_buf, 0);
-			fs_print((char*)buf, 0);
-			fs_print((char*)data, 0);
+			uint16_t new_blk_index = allocate_new_data_blk();
+			if(new_blk_index == 0) return 0;	//no space on disk to write
+			rootdirentry->index_first_data_blk = new_blk_index;
 		}
-		else //ABCD --> ABDE //never reached b/c only overwrite
-		{
-			//memcpy(&data[data_idx], &bounce_buf, BLOCK_SIZE); //copy ABDE
-			block_read(2+superblock->num_blks_fat+fat_idx, &data[data_idx]); //copy ABDE, no need for bounce_buf 
-			data_idx += BLOCK_SIZE;
-			
-			if (DEBUG) for (size_t j=data_idx; j<data_idx+10; ++j) fs_print("y", data[j]);
-		}
-		
-		fat_idx = fat[fat_idx].value;
-	} //end while
-	fs_print("end while", 0);
-	fs_print("data_idx", data_idx);
-	fs_print("fat_idx_offset == FAT_EOC", fat_idx_offset == FAT_EOC);
+		uint16_t data_index = rootdirentry->index_first_data_blk;
 
-	//2. copy to DB (block write back), allocate new space if needed (check disk space) + change FAT
-	//in FAT, write to DB
-	size_t i=0;
-	size_t j=0;
-	size_t prev_fat_idx;
-	(rootdir_fat_idx == FAT_EOC) ? (prev_fat_idx = rootdir_fat_idx) : (prev_fat_idx = fat_idx_offset); //edge case //don't delete ()
-	fat_idx = fat_idx_offset;
-	for (; i<data_idx; i+=BLOCK_SIZE, ++num_data_blks_used, prev_fat_idx=fat_idx, fat_idx=fat[fat_idx].value) //try to write all data
-	{
-		fs_print("prev_fat_idx", prev_fat_idx);
-		fs_print("fat_idx", fat_idx);
+		int blocks_want = ((count + offset) / BLOCK_SIZE) 
+			+ (((count + offset) % BLOCK_SIZE) != 0);
 
-		//check space
-		if (num_data_blks_used >= num_data_blks) //need to allocate new space + change FAT
-		//same as if (fat_idx == FAT_EOC)
+		//reaching here means atleast 1 blk is allocated to file
+		//so we can move forward one blk
+		blocks_want--;
+
+		while(blocks_want > 0)
 		{
-			//in FAT array, find first-fit
-			int space_allocated = 0;
-			for (j=0; j<superblock->num_data_blks; ++j) //num of FAT *entries* == superblock->num_data_blks
+			if(fat[data_index].value == FAT_EOC)
 			{
-				if (fat[j].value == 0) //empty
-				{
-					//now fat_idx == FAT_EOC
-					//change rootdir if needed //edge case
-					fs_print("change root/fat", 0);
-					(rootdir_fat_idx == FAT_EOC) ? (rootdir[rootdir_i].index_first_data_blk = j) : (fat[prev_fat_idx].value = j); //instead of FAT_EOC
-					fat_idx = j; //don't delete
-					fs_print("changed root/fat", 1);
-					fat[j].value = FAT_EOC;
-					space_allocated = 1;
-					
-					fs_print("j", j);
-					break;
-				}
+				uint16_t new_blk_index = allocate_new_data_blk();
+				if(new_blk_index == 0) break;
+				fat[data_index].value = new_blk_index;
 			}
-			if (!space_allocated) //not enough space
-			{
-				fs_print("no space", 0);
-				rootdir[rootdir_i].size_file_bytes = i;
-				fdtable[fd].offset = i;
-				if (i >= offset+count) return count;
-				else return i-offset;
-			}
+			data_index = fat[data_index].value;
+			blocks_want--;
+		}
+	}
+
+	uint16_t file_data_blk_idex = index_data_blk(fd, offset);	
+	//not enough blocks to write starting from offset
+	if(file_data_blk_idex == FAT_EOC) return 0;
+	//special case left index for reading first block
+	int left = offset % BLOCK_SIZE;
+	int amount_to_write_in_blk;
+	size_t bytes_wrote = 0;
+	//bounce buffer with index 0 to 4095
+	uint8_t bounce_buffer[BLOCK_SIZE];
+	while(file_data_blk_idex != FAT_EOC && count > 0)
+	{
+		if(left + count > BLOCK_SIZE)
+		{
+			amount_to_write_in_blk = BLOCK_SIZE - left;
+		}
+		else	//special case for reading last blk or total one blk
+		{
+			//read blk from index left or 0 up to remaining count bytes
+			amount_to_write_in_blk = count;
 		}
 
-		fs_print("WRITE BACK", 0);
-		fs_print("superblock->num_blks_fat", superblock->num_blks_fat);
-		fs_print("fat_idx", fat_idx);
-		fs_print("sum", 2+superblock->num_blks_fat+fat_idx);
+		memcpy(bounce_buffer + left, buf, amount_to_write_in_blk);
+		block_write(superblock->data_blk_start_index + file_data_blk_idex
+			, (void*)bounce_buffer);
+
+
+		//move start position in input buffer for next blk read
+		buf += amount_to_write_in_blk;	
+		bytes_wrote += amount_to_write_in_blk;
+		count -= amount_to_write_in_blk;
+
+		left = 0; //for subsequent blks other than first blk, start at index 0
 		
-		//write back to disk
-		block_write(2+superblock->num_blks_fat+fat_idx, &data[i]); //can use a bounce_buf for first_blk and last_blk instead, since only overwrite
-		
-		fs_print("fat_idx", fat_idx);
-		fs_print("fat[fat_idx].value", fat[fat_idx].value);
-		fs_print("data[i]", data[i]);
-	} //end for loop
-	fs_print("end for loop", 0);
-	
-	fs_print("count", count);
-	rootdir[rootdir_i].size_file_bytes += count; //change file size
-	fdtable[fd].offset = i; //change file offset
-	return count;
+		//move to reading next blk
+		file_data_blk_idex = fat[file_data_blk_idex].value;
+	}
+
+	//Example: file size 1 and offset currently at 0
+	//write 1 byte wont change size but write 2 byte will change size
+	if(offset + bytes_wrote > rootdirentry->size_file_bytes)
+	{
+		rootdirentry->size_file_bytes = offset + bytes_wrote;
+	}
+
+	fdtable[fd].offset += bytes_wrote;
+	return bytes_wrote;
 }
 
 int fs_read(int fd, void *buf, size_t count)
@@ -610,12 +524,12 @@ int fs_read(int fd, void *buf, size_t count)
 
 	size_t offset = fdtable[fd].offset;
 
-	//Example: file size 1 then file index maximum should be 0
-	//read nothing if offset is already pass file's contents
+	//Example: file size 1 then should only read index 0
+	//read nothing if offset is set beyond file's contents
 	if(offset + 1 > file_size)	return 0;
 
-	//Example: file size 2 and file index range 0 to 1
-	//update count to readable number of bytes left
+	//Example: file size 1 then should only read index 0
+	//reduce count to readable number of bytes left
 	//if count > readable number of bytes left
 	//file_size - offset is readable number of bytes left
 	if(count > file_size - offset) count = file_size - offset;
@@ -627,10 +541,10 @@ int fs_read(int fd, void *buf, size_t count)
 	//special case left index for reading first block
 	int left = offset % BLOCK_SIZE;
 	int amount_to_read_in_blk;
-	int bytes_read = 0;
+	size_t bytes_read = count;
 	//bounce buffer with index 0 to 4095
 	uint8_t bounce_buffer[BLOCK_SIZE];
-	while(count > 0)
+	while(count > 0)	//while not done reading
 	{
 		block_read(superblock->data_blk_start_index + file_data_blk_idex
 			, (void*)bounce_buffer);
@@ -641,19 +555,19 @@ int fs_read(int fd, void *buf, size_t count)
 		}
 		else	//special case for reading last blk or total one blk
 		{
-			//read blk from index 0 up to count bytes left
+			//read blk from index left or 0 up to remaining count bytes
 			amount_to_read_in_blk = count;
 		}
 
 		memcpy(buf, bounce_buffer + left, amount_to_read_in_blk);
 
-		buf += amount_to_read_in_blk;	//move ptr in input buffer
+		//move start position in input buffer for next blk read
+		buf += amount_to_read_in_blk;	
 		count -= amount_to_read_in_blk;
 
 		left = 0; //for subsequent blks other than first blk, start at index 0
 		
-		//increment bytes read counter and move to reading next blk
-		bytes_read += amount_to_read_in_blk;
+		//move to reading next blk
 		file_data_blk_idex = fat[file_data_blk_idex].value;
 	}
 
