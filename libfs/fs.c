@@ -119,8 +119,7 @@ int fs_umount(void)
 	if(!fsmounted || fd_open > 0) return -1;
 
 	//save disk and close
-	//write back superblock
-	if(block_write(0, superblock) == -1) return -1;
+	//dont need to write back superblock because we didnt change it
 
 	//write back FAT, which starts at block index 1 in disk
 	for(size_t i = 1, j = 0; i < superblock->root_dir_blk_index; i++, j++)
@@ -442,7 +441,7 @@ int fs_write(int fd, void *buf, size_t count)
 			if(fat[data_index].value == FAT_EOC)
 			{
 				uint16_t new_blk_index = allocate_new_data_blk();
-				if(new_blk_index == 0) break;	//no more blocks to allocate
+				if(new_blk_index == 0) break; //no more blocks to allocate
 				fat[data_index].value = new_blk_index;
 			}
 			data_index = fat[data_index].value;
@@ -452,7 +451,7 @@ int fs_write(int fd, void *buf, size_t count)
 
 	uint16_t file_data_blk_idex = 
 		index_data_blk(rootdirentry->index_first_data_blk, offset);	
-	//not enough blocks to write starting from offset
+	//not enough blocks allocated to write starting from offset
 	if(file_data_blk_idex == FAT_EOC) return 0;
 	//special case left index for writing first block
 	int left = offset % BLOCK_SIZE;
@@ -532,6 +531,7 @@ int fs_read(int fd, void *buf, size_t count)
 
 	//Example: file size 1 then should only read index 0
 	//read nothing if offset is set beyond file's contents
+	//...user should be writing instead to extend the file
 	if(offset + 1 > file_size)	return 0;
 
 	//Example: file size 1 then should only read index 0
@@ -551,6 +551,7 @@ int fs_read(int fd, void *buf, size_t count)
 			break;
 		}
 	}
+	//move to the correct blk based on file's offset
 	uint16_t file_data_blk_idex = index_data_blk(data_start_index, offset);	
 	//special case left index for reading first block
 	int left = offset % BLOCK_SIZE;
