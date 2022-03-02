@@ -472,6 +472,15 @@ int fs_write(int fd, void *buf, size_t count)
 			amount_to_write_in_blk = count;
 		}
 
+		if(left != 0)
+		{
+			//for writing the first block we want to retain information that is
+			//is already written to it. EX: file size 4096 and offset is at 
+			//middle of file and we write 1 byte. Only that 1 byte should 
+			//change in the file's contents and nothing else.
+			block_read(superblock->data_blk_start_index + file_data_blk_idex
+			, (void*)bounce_buffer);
+		}
 		memcpy(bounce_buffer + left, buf, amount_to_write_in_blk);
 		block_write(superblock->data_blk_start_index + file_data_blk_idex
 			, (void*)bounce_buffer);
@@ -480,11 +489,11 @@ int fs_write(int fd, void *buf, size_t count)
 		buf += amount_to_write_in_blk;	
 		bytes_wrote += amount_to_write_in_blk;
 		count -= amount_to_write_in_blk;
-
-		left = 0; //for subsequent blks other than first blk, start at index 0
 		
 		//move to writing next blk
 		file_data_blk_idex = fat[file_data_blk_idex].value;
+
+		left = 0; //for subsequent blks other than first blk, start at index 0
 	}
 
 	//Example: file size 1 and offset currently at 0
@@ -560,11 +569,11 @@ int fs_read(int fd, void *buf, size_t count)
 		//move start position in input buffer for next blk read
 		buf += amount_to_read_in_blk;	
 		count -= amount_to_read_in_blk;
-
-		left = 0; //for subsequent blks other than first blk, start at index 0
 		
 		//move to reading next blk
 		file_data_blk_idex = fat[file_data_blk_idex].value;
+
+		left = 0; //for subsequent blks other than first blk, start at index 0
 	}
 
 	fdtable[fd].offset += bytes_read;
