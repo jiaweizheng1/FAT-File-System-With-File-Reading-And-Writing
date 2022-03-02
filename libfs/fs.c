@@ -472,18 +472,26 @@ int fs_write(int fd, void *buf, size_t count)
 			amount_to_write_in_blk = count;
 		}
 
-		if(left != 0)
+		if(amount_to_write_in_blk < BLOCK_SIZE)
 		{
-			//for writing the first block we want to retain information that is
-			//is already written to it. EX: file size 4096 and offset is at 
-			//middle of file and we write 1 byte. Only that 1 byte should 
-			//change in the file's contents and nothing else.
+			//for writing the first and last block, there are cases when we 
+			//want to retain information that is already written to it because 
+			//we dont want to overwrite the entire block. EX: file size 4096 
+			//and offset is at middle of file and we write 1 byte. Only that 1 
+			//byte should change in the file's contents and nothing else.
 			block_read(superblock->data_blk_start_index + file_data_blk_idex
 			, (void*)bounce_buffer);
-		}
-		memcpy(bounce_buffer + left, buf, amount_to_write_in_blk);
-		block_write(superblock->data_blk_start_index + file_data_blk_idex
+			memcpy(bounce_buffer + left, buf, amount_to_write_in_blk);
+			block_write(superblock->data_blk_start_index + file_data_blk_idex
 			, (void*)bounce_buffer);
+		}
+		else 
+		{
+			//otherwise, we overwrite the entire block for blocks that are 
+			//neither the first block or the last block
+			block_write(superblock->data_blk_start_index + file_data_blk_idex
+			, (void*)buf);
+		}
 
 		//move start position in input buffer for next blk write
 		buf += amount_to_write_in_blk;	
@@ -562,9 +570,21 @@ int fs_read(int fd, void *buf, size_t count)
 			amount_to_read_in_blk = count;
 		}
 
-		block_read(superblock->data_blk_start_index + file_data_blk_idex
+		if(amount_to_read_in_blk < BLOCK_SIZE)
+		{
+			//for cases where we only want to read subset of the first block
+			//and last block
+			block_read(superblock->data_blk_start_index + file_data_blk_idex
 			, (void*)bounce_buffer);
-		memcpy(buf, bounce_buffer + left, amount_to_read_in_blk);
+			memcpy(buf, bounce_buffer + left, amount_to_read_in_blk);
+		}
+		else
+		{
+			//otherwise, we read the entire block for blocks that are 
+			//neither the first block or the last block
+			block_read(superblock->data_blk_start_index + file_data_blk_idex
+			, (void*)buf);
+		}
 
 		//move start position in input buffer for next blk read
 		buf += amount_to_read_in_blk;	
