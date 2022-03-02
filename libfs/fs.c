@@ -78,9 +78,8 @@ int fs_mount(const char *diskname)
 
 	//validate FAT using ceiling function
 	//https://www.geeksforgeeks.org/find-ceil-ab-without-using-ceil-function/
-	//check if num_blks_fat == ceil((num_data_blks*2)/BLOCK_SIZE)
-	//ceilVal = (a+b-1)/b, a=num_data_blks*2, b=BLOCK_SIZE, divide b by 2
-	if(superblock->num_blks_fat != ((superblock->num_data_blks * 2) / 
+	//check if num_blks_fat > ceil((num_data_blks*2)/BLOCK_SIZE)
+	if(superblock->num_blks_fat < ((superblock->num_data_blks * 2) / 
 		BLOCK_SIZE) + (((superblock->num_data_blks * 2) % BLOCK_SIZE) != 0))
 		return -1;
 
@@ -430,6 +429,7 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 		uint16_t data_index = rootdirentry->index_first_data_blk;
 
+		//ceiling function from geeks for geeks
 		int blocks_want = ((count + offset) / BLOCK_SIZE) 
 			+ (((count + offset) % BLOCK_SIZE) != 0);
 
@@ -442,7 +442,7 @@ int fs_write(int fd, void *buf, size_t count)
 			if(fat[data_index].value == FAT_EOC)
 			{
 				uint16_t new_blk_index = allocate_new_data_blk();
-				if(new_blk_index == 0) break;
+				if(new_blk_index == 0) break;	//no more blocks to allocate
 				fat[data_index].value = new_blk_index;
 			}
 			data_index = fat[data_index].value;
@@ -475,7 +475,6 @@ int fs_write(int fd, void *buf, size_t count)
 		memcpy(bounce_buffer + left, buf, amount_to_write_in_blk);
 		block_write(superblock->data_blk_start_index + file_data_blk_idex
 			, (void*)bounce_buffer);
-
 
 		//move start position in input buffer for next blk write
 		buf += amount_to_write_in_blk;	
@@ -526,7 +525,6 @@ int fs_read(int fd, void *buf, size_t count)
 
 	//otherwise, valid for reading so
 	//get index of first data block in data array according to offset
-	//dont need to error check in helper function because already did it here
 	uint16_t data_start_index = 0;
 	for (int i = 0; i < FS_FILE_MAX_COUNT; i++)
 	{
@@ -545,9 +543,6 @@ int fs_read(int fd, void *buf, size_t count)
 	uint8_t bounce_buffer[BLOCK_SIZE];
 	while(count > 0)	//while not done reading
 	{
-		block_read(superblock->data_blk_start_index + file_data_blk_idex
-			, (void*)bounce_buffer);
-
 		if(left + count > BLOCK_SIZE)
 		{
 			amount_to_read_in_blk = BLOCK_SIZE - left;
@@ -558,6 +553,8 @@ int fs_read(int fd, void *buf, size_t count)
 			amount_to_read_in_blk = count;
 		}
 
+		block_read(superblock->data_blk_start_index + file_data_blk_idex
+			, (void*)bounce_buffer);
 		memcpy(buf, bounce_buffer + left, amount_to_read_in_blk);
 
 		//move start position in input buffer for next blk read
