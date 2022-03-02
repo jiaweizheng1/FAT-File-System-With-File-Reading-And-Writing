@@ -464,7 +464,7 @@ int fs_write(int fd, void *buf, size_t count)
 	uint16_t file_data_blk_idex = index_data_blk(fd, offset);	
 	//not enough blocks to write starting from offset
 	if(file_data_blk_idex == FAT_EOC) return 0;
-	//special case left index for reading first block
+	//special case left index for writing first block
 	int left = offset % BLOCK_SIZE;
 	int amount_to_write_in_blk;
 	size_t bytes_wrote = 0;
@@ -476,9 +476,9 @@ int fs_write(int fd, void *buf, size_t count)
 		{
 			amount_to_write_in_blk = BLOCK_SIZE - left;
 		}
-		else	//special case for reading last blk or total one blk
+		else	//special case for writing last blk or total one blk
 		{
-			//read blk from index left or 0 up to remaining count bytes
+			//write blk from index left or 0 up to remaining count bytes
 			amount_to_write_in_blk = count;
 		}
 
@@ -487,14 +487,14 @@ int fs_write(int fd, void *buf, size_t count)
 			, (void*)bounce_buffer);
 
 
-		//move start position in input buffer for next blk read
+		//move start position in input buffer for next blk write
 		buf += amount_to_write_in_blk;	
 		bytes_wrote += amount_to_write_in_blk;
 		count -= amount_to_write_in_blk;
 
 		left = 0; //for subsequent blks other than first blk, start at index 0
 		
-		//move to reading next blk
+		//move to writing next blk
 		file_data_blk_idex = fat[file_data_blk_idex].value;
 	}
 
