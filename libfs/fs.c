@@ -361,19 +361,8 @@ int fs_lseek(int fd, size_t offset)
 //phase 4
 
 //---start of helper functions
-uint16_t index_data_blk(int fd, size_t file_offset)
+uint16_t index_data_blk(uint16_t data_start_index , size_t file_offset)
 {
-	//extract index_first_data_blk of an file entry in root dir
-	uint16_t data_start_index = 0;
-	for (int i = 0; i < FS_FILE_MAX_COUNT; i++)
-	{
-		if(strcmp((char*)rootdir[i].filename, fdtable[fd].filename) == 0)
-		{
-			data_start_index = rootdir[i].index_first_data_blk;
-			break;
-		}
-	}
-
 	//index of data blk according to offset and the start index
 	//update data_start_index using fat entry pointers
 	//Example: we read 1st block if offset 4095 and 2nd block if offset 4096
@@ -461,7 +450,8 @@ int fs_write(int fd, void *buf, size_t count)
 		}
 	}
 
-	uint16_t file_data_blk_idex = index_data_blk(fd, offset);	
+	uint16_t file_data_blk_idex = 
+		index_data_blk(rootdirentry->index_first_data_blk, offset);	
 	//not enough blocks to write starting from offset
 	if(file_data_blk_idex == FAT_EOC) return 0;
 	//special case left index for writing first block
@@ -537,7 +527,16 @@ int fs_read(int fd, void *buf, size_t count)
 	//otherwise, valid for reading so
 	//get index of first data block in data array according to offset
 	//dont need to error check in helper function because already did it here
-	uint16_t file_data_blk_idex = index_data_blk(fd, offset);	
+	uint16_t data_start_index = 0;
+	for (int i = 0; i < FS_FILE_MAX_COUNT; i++)
+	{
+		if(strcmp((char*)rootdir[i].filename, fdtable[fd].filename) == 0)
+		{
+			data_start_index = rootdir[i].index_first_data_blk;
+			break;
+		}
+	}
+	uint16_t file_data_blk_idex = index_data_blk(data_start_index, offset);	
 	//special case left index for reading first block
 	int left = offset % BLOCK_SIZE;
 	int amount_to_read_in_blk;
