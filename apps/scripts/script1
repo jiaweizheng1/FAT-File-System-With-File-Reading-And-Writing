@@ -1,12 +1,14 @@
 MOUNT
-CREATE	file_fs
-CREATE	file_fs2
-OPEN	file_fs
+CREATE	ffle_fs
+OPEN	ffle_fs
 SEEK	0
-READ	4096	FILE	test_file
+WRITE	DATA	0
+SEEK	2
 CLOSE
+CREATE	file_fs2
 OPEN	file_fs2
 SEEK	0
-READ	8192	FILE	test_file2
+WRITE	DATA	0
+SEEK	2
 CLOSE
 UMOUNT

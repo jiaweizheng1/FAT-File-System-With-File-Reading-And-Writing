@@ -1,0 +1,12 @@
+MOUNT
+CREATE	file_fs
+CREATE	file_fs2
+OPEN	file_fs
+SEEK	0
+READ	4096	FILE	test_file
+CLOSE
+OPEN	file_fs2
+SEEK	0
+READ	8192	FILE	test_file2
+CLOSE
+UMOUNT

@@ -1,21 +1,47 @@
-#Test 1
+#Test 0: Test provided by professor
 dd if=/dev/random of=test_file bs=4096 count=1
 ./fs_make.x ref.fs 3
 ./fs_make.x my.fs 3
 ./fs_ref.x script ref.fs scripts/script.example
 ./test_fs.x script my.fs scripts/script.example
+diff ref.fs my.fs
 cmp ref.fs my.fs -l --verbose
 rm test_file
 rm ref.fs
 rm my.fs
 
-#Test 2
-dd if=/dev/random of=test_file bs=4096 count=1
-dd if=/dev/random of=test_file2 bs=8192 count=1
+#Test 1: Add nonexistent files
 ./fs_make.x ref.fs 10
 ./fs_make.x my.fs 10
 ./fs_ref.x script ref.fs scripts/script1
 ./test_fs.x script my.fs scripts/script1
+diff ref.fs my.fs
+cmp ref.fs my.fs -l --verbose
+rm ref.fs
+rm my.fs
+
+#Test 2: Create two files
+dd if=/dev/random of=test_file bs=4096 count=1
+dd if=/dev/random of=test_file2 bs=8192 count=1
+./fs_make.x ref.fs 10
+./fs_make.x my.fs 10
+./fs_ref.x script ref.fs scripts/script2
+./test_fs.x script my.fs scripts/script2
+diff ref.fs my.fs
+cmp ref.fs my.fs -l --verbose
+rm test_file
+rm test_file2
+rm ref.fs
+rm my.fs
+
+#Test 3: Different Cases Blk Writing
+dd if=/dev/random of=test_file bs=16384 count=1
+dd if=/dev/random of=test_file2 bs=12288 count=1
+./fs_make.x ref.fs 100
+./fs_make.x my.fs 100
+./fs_ref.x script ref.fs scripts/script3
+./test_fs.x script my.fs scripts/script3
+diff ref.fs my.fs
 cmp ref.fs my.fs -l --verbose
 rm test_file
 rm test_file2
