@@ -415,7 +415,6 @@ int fs_write(int fd, void *buf, size_t count)
 		if(rootdirentry->index_first_data_blk == FAT_EOC)
 		{
 			uint16_t new_blk_index = allocate_new_data_blk();
-			rootdirentry->index_first_data_blk = new_blk_index;
 			if(new_blk_index == 0) return 0;	//no space on disk to write
 			rootdirentry->index_first_data_blk = new_blk_index;
 		}
