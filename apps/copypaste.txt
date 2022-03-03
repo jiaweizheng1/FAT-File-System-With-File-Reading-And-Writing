@@ -1,11 +1,23 @@
-./fs_make.x test.fs 100  
-./fs_make.x test1.fs 100
-./fs_ref.x script test.fs scripts/script1
-./test_fs.x script test1.fs scripts/script1
-diff test1.fs test.fs
+#Test 1
+dd if=/dev/random of=test_file bs=4096 count=1
+./fs_make.x ref.fs 3
+./fs_make.x my.fs 3
+./fs_ref.x script ref.fs scripts/script.example
+./test_fs.x script my.fs scripts/script.example
+cmp ref.fs my.fs -l --verbose
+rm test_file
+rm ref.fs
+rm my.fs
 
-cmp test.fs test1.fs -l  --verbose
-
-cat test.fs
-cat test1.fs
-
+#Test 2
+dd if=/dev/random of=test_file bs=4096 count=1
+dd if=/dev/random of=test_file2 bs=8192 count=1
+./fs_make.x ref.fs 10
+./fs_make.x my.fs 10
+./fs_ref.x script ref.fs scripts/script1
+./test_fs.x script my.fs scripts/script1
+cmp ref.fs my.fs -l --verbose
+rm test_file
+rm test_file2
+rm ref.fs
+rm my.fs

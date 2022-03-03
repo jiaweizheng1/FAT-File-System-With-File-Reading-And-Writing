@@ -1,7 +1,12 @@
 MOUNT
 CREATE	file_fs
+CREATE	file_fs2
 OPEN	file_fs
-WRITE	DATA	00000
+SEEK	0
+READ	4096	FILE	test_file
 CLOSE
-DELETE	file_fs
+OPEN	file_fs2
+SEEK	0
+READ	8192	FILE	test_file2
+CLOSE
 UMOUNT
