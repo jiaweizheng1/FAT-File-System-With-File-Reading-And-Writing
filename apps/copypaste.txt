@@ -10,7 +10,7 @@ rm test_file
 rm ref.fs
 rm my.fs
 
-#Test 1: Add nonexistent files
+#Test 1: SEEK Outside Bounds
 ./fs_make.x ref.fs 10
 ./fs_make.x my.fs 10
 ./fs_ref.x script ref.fs scripts/script1
@@ -47,5 +47,38 @@ cmp ref.fs my.fs -l --verbose
 rm test_file
 rm test_file2
 rm test_file3
+rm ref.fs
+rm my.fs
+
+#Other Tests
+dd if=/dev/random of=test_file bs=99999 count=1
+dd if=/dev/random of=1234567891234567 bs=6666 count=1
+dd if=/dev/random of=123456789123456 bs=3333 count=1
+./fs_make.x ref.fs 8192
+./fs_make.x my.fs 8192
+./fs_ref.x info ref.fs >> ref.txt
+./test_fs.x info my.fs >> my.txt
+./fs_ref.x add ref.fs test_file >> ref.txt
+./test_fs.x add my.fs test_file >> my.txt
+./fs_ref.x add ref.fs 1234567891234567 >> ref.txt
+./test_fs.x add my.fs 1234567891234567 >> my.txt
+./fs_ref.x add ref.fs 123456789123456 >> ref.txt
+./test_fs.x add my.fs 123456789123456 >> my.txt
+./fs_ref.x info ref.fs >> ref.txt
+./test_fs.x info my.fs >> my.txt
+./fs_ref.x ls ref.fs >> ref.txt
+./test_fs.x ls my.fs >> my.txt
+./fs_ref.x cat ref.fs test_file >> ref.txt
+./test_fs.x cat my.fs test_file >> my.txt
+./fs_ref.x rm ref.fs test_file >> ref.txt
+./test_fs.x rm my.fs test_file >> my.txt
+diff ref.fs my.fs
+cmp ref.fs my.fs -l --verbose
+diff ref.txt my.txt
+rm test_file
+rm 1234567891234567
+rm 123456789123456
+rm ref.txt
+rm my.txt
 rm ref.fs
 rm my.fs
