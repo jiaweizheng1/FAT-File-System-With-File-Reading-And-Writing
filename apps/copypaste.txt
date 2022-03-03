@@ -1,0 +1,11 @@
+./fs_make.x test.fs 100  
+./fs_make.x test1.fs 100
+./fs_ref.x script test.fs scripts/script1
+./test_fs.x script test1.fs scripts/script1
+diff test1.fs test.fs
+
+cmp test.fs test1.fs -l  --verbose
+
+cat test.fs
+cat test1.fs
+

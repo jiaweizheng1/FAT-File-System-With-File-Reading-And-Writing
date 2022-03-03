@@ -1,0 +1,7 @@
+MOUNT
+CREATE	file_fs
+OPEN	file_fs
+WRITE	DATA	00000
+CLOSE
+DELETE	file_fs
+UMOUNT

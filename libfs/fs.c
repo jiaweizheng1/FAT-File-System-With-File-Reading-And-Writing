@@ -7,17 +7,9 @@
 #include "disk.h"
 #include "fs.h"
 
-#define FAT_EOC 0xFFFF
+#define FAT_EOC 0xffff
 
 typedef enum {false, true} bool;
-
-int DEBUG = 0; //enable/disable printf statements
-
-void fs_print(char* str, int num)
-{
-	if (DEBUG) printf("===%s: %d===\n", str, num);
-	else if (str || num) return; //avoid compiler error
-}
 
 struct Superblock	//unsigned specs
 {
@@ -201,8 +193,7 @@ int fs_create(const char *filename)
 	if(num_files == FS_FILE_MAX_COUNT) return -1;
 
 	//else, safe to create this new file in root dir
-	memcpy(rootdir[first_available_index].filename, filename
-		, FS_FILENAME_LEN);
+	strcpy((char*)rootdir[first_available_index].filename, filename);
 	rootdir[first_available_index].size_file_bytes = 0;
 	rootdir[first_available_index].index_first_data_blk = FAT_EOC;
 	
@@ -242,6 +233,7 @@ int fs_delete(const char *filename)
 
 	//clean file's contents in root dir
 	rootdir[i].filename[0] = '\0';
+	rootdir[i].index_first_data_blk = '\0';
 
 	//clean file's contents in FAT
 	while(index_cur_data_blk != FAT_EOC)
@@ -300,7 +292,7 @@ int fs_open(const char *filename)
 		//apply same concept for when a entry is empty in root dir
 		if(fdtable[fd].filename[0] == '\0')
 		{
-			memcpy(fdtable[fd].filename, filename, FS_FILENAME_LEN);
+			strcpy((char*)fdtable[fd].filename, filename);
 			fdtable[fd].offset = 0;
 			fd_open++;
 			break;
@@ -423,6 +415,7 @@ int fs_write(int fd, void *buf, size_t count)
 		if(rootdirentry->index_first_data_blk == FAT_EOC)
 		{
 			uint16_t new_blk_index = allocate_new_data_blk();
+			rootdirentry->index_first_data_blk = new_blk_index;
 			if(new_blk_index == 0) return 0;	//no space on disk to write
 			rootdirentry->index_first_data_blk = new_blk_index;
 		}
