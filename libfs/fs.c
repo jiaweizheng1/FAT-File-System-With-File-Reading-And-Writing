@@ -78,8 +78,8 @@ int fs_mount(const char *diskname)
 
 	//validate FAT using ceiling function
 	//https://www.geeksforgeeks.org/find-ceil-ab-without-using-ceil-function/
-	//check if num_blks_fat > ceil((num_data_blks*2)/BLOCK_SIZE)
-	if(superblock->num_blks_fat < ((superblock->num_data_blks * 2) / 
+	//check if num_blks_fat = ceil((num_data_blks*2)/BLOCK_SIZE)
+	if(superblock->num_blks_fat != ((superblock->num_data_blks * 2) / 
 		BLOCK_SIZE) + (((superblock->num_data_blks * 2) % BLOCK_SIZE) != 0))
 		return -1;
 
