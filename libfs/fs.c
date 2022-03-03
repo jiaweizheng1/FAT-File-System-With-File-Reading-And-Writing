@@ -196,6 +196,8 @@ int fs_create(const char *filename)
 	strcpy((char*)rootdir[first_available_index].filename, filename);
 	rootdir[first_available_index].size_file_bytes = 0;
 	rootdir[first_available_index].index_first_data_blk = FAT_EOC;
+
+	if(block_write(superblock->root_dir_blk_index, rootdir) == -1) return -1;
 	
 	return 0;
 }
@@ -242,6 +244,15 @@ int fs_delete(const char *filename)
 		fat[index_cur_data_blk].value = 0;
 		index_cur_data_blk = index_next_data_blk;
 	}
+
+	//write back FAT, which starts at block index 1 in disk
+	for(size_t i = 1, j = 0; i < superblock->root_dir_blk_index; i++, j++)
+	{
+		if(block_write(i, (void*)fat + j * BLOCK_SIZE) == -1) return -1;
+	}
+
+	//write back root dir
+	if(block_write(superblock->root_dir_blk_index, rootdir) == -1) return -1;
 
 	return 0;
 }
