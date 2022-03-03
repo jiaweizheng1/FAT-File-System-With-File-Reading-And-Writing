@@ -20,7 +20,7 @@ cmp ref.fs my.fs -l --verbose
 rm ref.fs
 rm my.fs
 
-#Test 2: Create two files
+#Test 2: Create two files, extend one, write the other
 dd if=/dev/random of=test_file bs=4096 count=1
 dd if=/dev/random of=test_file2 bs=8192 count=1
 ./fs_make.x ref.fs 10
@@ -37,6 +37,7 @@ rm my.fs
 #Test 3: Different Cases Blk Writing
 dd if=/dev/random of=test_file bs=16384 count=1
 dd if=/dev/random of=test_file2 bs=12288 count=1
+dd if=/dev/random of=test_file3 bs=10 count=1
 ./fs_make.x ref.fs 100
 ./fs_make.x my.fs 100
 ./fs_ref.x script ref.fs scripts/script3
@@ -45,5 +46,6 @@ diff ref.fs my.fs
 cmp ref.fs my.fs -l --verbose
 rm test_file
 rm test_file2
+rm test_file3
 rm ref.fs
 rm my.fs
