@@ -448,7 +448,8 @@ int fs_write(int fd, void *buf, size_t count)
 			blocks_want--;
 		}
 	}
-
+	
+	//move to the correct blk based on file's offset
 	uint16_t file_data_blk_idex = 
 		index_data_blk(rootdirentry->index_first_data_blk, offset);	
 	//not enough blocks allocated to write starting from offset
