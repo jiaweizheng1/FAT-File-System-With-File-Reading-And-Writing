@@ -53,7 +53,7 @@ rm ref.fs
 rm my.fs
 
 #Test 4: Write large files multiple times
-(test_file4 is in apps/)
+dd if=/dev/random of=test_file4 bs=999999 count=1
 ./fs_make.x ref.fs 3
 ./fs_make.x my.fs 3
 ./fs_ref.x script ref.fs scripts/script4
