@@ -52,6 +52,18 @@ rm test_file3
 rm ref.fs
 rm my.fs
 
+#Test 4: Write large files multiple times
+(test_file4 is in apps/)
+./fs_make.x ref.fs 3
+./fs_make.x my.fs 3
+./fs_ref.x script ref.fs scripts/script4
+./test_fs.x script my.fs scripts/script4
+diff ref.fs my.fs
+cmp ref.fs my.fs -l --verbose
+rm test_file
+rm ref.fs
+rm my.fs
+
 #Other Tests
 dd if=/dev/random of=test_file bs=99999 count=1
 dd if=/dev/random of=1234567891234567 bs=6666 count=1
