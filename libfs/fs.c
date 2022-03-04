@@ -512,6 +512,15 @@ int fs_write(int fd, void *buf, size_t count)
 	if(offset + bytes_wrote > rootdirentry->size_file_bytes)
 	{
 		rootdirentry->size_file_bytes = offset + bytes_wrote;
+
+		//write back FAT, which starts at block index 1 in disk
+		for(size_t i = 1, j = 0; i < superblock->root_dir_blk_index; i++, j++)
+		{
+			if(block_write(i, (void*)fat + j * BLOCK_SIZE) == -1) return -1;
+		}
+
+		//write back root dir
+		if(block_write(superblock->root_dir_blk_index, rootdir) == -1) return -1;
 	}
 
 	fdtable[fd].offset += bytes_wrote;
