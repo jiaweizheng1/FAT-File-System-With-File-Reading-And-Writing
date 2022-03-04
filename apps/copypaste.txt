@@ -11,12 +11,14 @@ rm ref.fs
 rm my.fs
 
 #Test 1: SEEK Outside Bounds
+dd if=/dev/random of=test_file bs=4096 count=1
 ./fs_make.x ref.fs 10
 ./fs_make.x my.fs 10
 ./fs_ref.x script ref.fs scripts/script1
 ./test_fs.x script my.fs scripts/script1
 diff ref.fs my.fs
 cmp ref.fs my.fs -l --verbose
+rm test_file
 rm ref.fs
 rm my.fs
 
