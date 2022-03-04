@@ -60,7 +60,7 @@ rm my.fs
 ./test_fs.x script my.fs scripts/script4
 diff ref.fs my.fs
 cmp ref.fs my.fs -l --verbose
-rm test_file
+rm test_file4
 rm ref.fs
 rm my.fs
 
