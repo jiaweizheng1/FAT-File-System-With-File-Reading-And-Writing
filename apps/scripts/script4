@@ -1,0 +1,13 @@
+MOUNT
+CREATE	file_fs
+OPEN	file_fs
+WRITE	FILE	test_file4
+SEEK	0
+READ	115	FILE	test_file4
+SEEK	5
+WRITE	FILE	test_file4
+SEEK	10
+WRITE	DATA	test_file4
+DELETE file_fs
+CLOSE
+UMOUNT
